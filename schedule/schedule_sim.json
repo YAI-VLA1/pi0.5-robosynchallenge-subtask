@@ -1,0 +1,902 @@
+{
+ "click_bell": {
+  "total_steps": 74,
+  "dataset_len": 74,
+  "scopes": [
+   "left_arm",
+   "left_eef",
+   "right_arm",
+   "right_eef"
+  ],
+  "segments": {
+   "init_to_prepress_pre": [
+    0,
+    50,
+    "right_arm"
+   ],
+   "aim_prepress_pre_to_up": [
+    50,
+    74,
+    "right_arm"
+   ]
+  }
+ },
+ "drawer_open_place": {
+  "total_steps": 425,
+  "dataset_len": 425,
+  "scopes": [
+   "left_arm",
+   "left_eef",
+   "right_arm",
+   "right_eef"
+  ],
+  "segments": {
+   "right_to_handle_start_pre": [
+    0,
+    30,
+    "right_arm"
+   ],
+   "left_to_pregrasp": [
+    0,
+    60,
+    "left_arm"
+   ],
+   "right_close_handle_1": [
+    30,
+    40,
+    "right_eef"
+   ],
+   "right_handle_start_pre_to_handle_start": [
+    40,
+    70,
+    "right_arm"
+   ],
+   "left_pregrasp_to_grasp": [
+    60,
+    100,
+    "left_arm"
+   ],
+   "right_close_handle_2": [
+    70,
+    80,
+    "right_eef"
+   ],
+   "right_drawer_pull_pre": [
+    80,
+    120,
+    "right_arm"
+   ],
+   "left_close_duck": [
+    100,
+    130,
+    "left_eef"
+   ],
+   "right_pull_pre_to_drawer_pull": [
+    120,
+    160,
+    "right_arm"
+   ],
+   "left_grasp_to_lift": [
+    130,
+    170,
+    "left_arm"
+   ],
+   "left_to_place_hover": [
+    170,
+    230,
+    "left_arm"
+   ],
+   "left_place_drop": [
+    230,
+    270,
+    "left_arm"
+   ],
+   "left_open_duck": [
+    270,
+    290,
+    "left_eef"
+   ],
+   "left_return_home": [
+    290,
+    320,
+    "left_arm"
+   ],
+   "right_drawer_push_close": [
+    320,
+    370,
+    "right_arm"
+   ],
+   "right_open_handle_after_close": [
+    370,
+    395,
+    "right_eef"
+   ],
+   "right_back": [
+    395,
+    425,
+    "right_arm"
+   ]
+  }
+ },
+ "handle_basket": {
+  "total_steps": 335,
+  "dataset_len": 328,
+  "scopes": [
+   "left_arm",
+   "left_eef",
+   "right_arm",
+   "right_eef"
+  ],
+  "segments": {
+   "open0": [
+    0,
+    11,
+    "left_eef"
+   ],
+   "ropen0": [
+    0,
+    11,
+    "right_eef"
+   ],
+   "left_init_to_grasp_pre1": [
+    0,
+    30,
+    "left_arm"
+   ],
+   "left_pre1_to_grasp": [
+    30,
+    45,
+    "left_arm"
+   ],
+   "close0": [
+    45,
+    56,
+    "left_eef"
+   ],
+   "left_grasp_to_lift": [
+    56,
+    80,
+    "left_arm"
+   ],
+   "left_lift_to_move_basket": [
+    80,
+    110,
+    "left_arm"
+   ],
+   "left_move_basket_to_place": [
+    110,
+    125,
+    "left_arm"
+   ],
+   "open1": [
+    125,
+    136,
+    "left_eef"
+   ],
+   "left_move_basket_to_monitor": [
+    136,
+    160,
+    "left_arm"
+   ],
+   "right_init_to_pre1": [
+    160,
+    190,
+    "right_arm"
+   ],
+   "right_pre1_to_grasp": [
+    190,
+    214,
+    "right_arm"
+   ],
+   "rclose0": [
+    214,
+    225,
+    "right_eef"
+   ],
+   "right_grasp_to_lift": [
+    225,
+    249,
+    "right_arm"
+   ],
+   "right_lift_to_place": [
+    249,
+    284,
+    "right_arm"
+   ],
+   "ropen1": [
+    284,
+    295,
+    "right_eef"
+   ],
+   "ending": [
+    295,
+    335,
+    "right_arm"
+   ]
+  }
+ },
+ "item_assembly": {
+  "total_steps": 318,
+  "dataset_len": 318,
+  "scopes": [
+   "left_arm",
+   "left_eef",
+   "right_arm",
+   "right_eef"
+  ],
+  "segments": {
+   "left_init_to_aim": [
+    0,
+    10,
+    "left_arm"
+   ],
+   "init_to_aim": [
+    0,
+    10,
+    "right_arm"
+   ],
+   "left_aim_to_pre1": [
+    10,
+    34,
+    "left_arm"
+   ],
+   "aim_to_pre1": [
+    10,
+    34,
+    "right_arm"
+   ],
+   "left_pre1_to_grasp": [
+    34,
+    58,
+    "left_arm"
+   ],
+   "pre1_to_grasp": [
+    34,
+    58,
+    "right_arm"
+   ],
+   "lclose0": [
+    58,
+    69,
+    "left_eef"
+   ],
+   "rclose0": [
+    58,
+    69,
+    "right_eef"
+   ],
+   "left_grasp_to_up": [
+    69,
+    79,
+    "left_arm"
+   ],
+   "grasp_to_up": [
+    69,
+    79,
+    "right_arm"
+   ],
+   "left_up_to_move": [
+    79,
+    119,
+    "left_arm"
+   ],
+   "up_to_move": [
+    79,
+    119,
+    "right_arm"
+   ],
+   "move_to_splice_0": [
+    119,
+    149,
+    "right_arm"
+   ],
+   "move_to_splice_1": [
+    149,
+    179,
+    "right_arm"
+   ],
+   "left_move_to_L_adjust": [
+    179,
+    203,
+    "left_arm"
+   ],
+   "splice_to_adjust": [
+    179,
+    203,
+    "right_arm"
+   ],
+   "stand": [
+    203,
+    213,
+    "right_arm"
+   ],
+   "left_adjust_to_L_splice": [
+    203,
+    227,
+    "left_arm"
+   ],
+   "L_splice_to_L_adjust": [
+    227,
+    267,
+    "left_arm"
+   ],
+   "L_adjust_to_stand": [
+    267,
+    307,
+    "left_arm"
+   ],
+   "lopen0": [
+    307,
+    318,
+    "left_eef"
+   ],
+   "ropen0": [
+    307,
+    318,
+    "right_eef"
+   ]
+  }
+ },
+ "items_handover": {
+  "total_steps": 327,
+  "dataset_len": 327,
+  "scopes": [
+   "left_arm",
+   "left_eef",
+   "right_arm",
+   "right_eef"
+  ],
+  "segments": {
+   "left_open0": [
+    0,
+    15,
+    "left_eef"
+   ],
+   "right_open0": [
+    0,
+    15,
+    "right_eef"
+   ],
+   "right_init_to_pre1": [
+    15,
+    50,
+    "right_arm"
+   ],
+   "right_pre1_to_grasp": [
+    50,
+    74,
+    "right_arm"
+   ],
+   "right_close0": [
+    74,
+    89,
+    "right_eef"
+   ],
+   "right_grasp_to_up": [
+    89,
+    113,
+    "right_arm"
+   ],
+   "right_up_to_handover": [
+    113,
+    148,
+    "right_arm"
+   ],
+   "left_init_to_pre1": [
+    148,
+    172,
+    "left_arm"
+   ],
+   "left_pre1_to_takeover": [
+    172,
+    202,
+    "left_arm"
+   ],
+   "left_close0": [
+    202,
+    217,
+    "left_eef"
+   ],
+   "right_open1": [
+    217,
+    227,
+    "right_eef"
+   ],
+   "right_handover_to_back": [
+    227,
+    247,
+    "right_arm"
+   ],
+   "left_takeover_to_move": [
+    247,
+    272,
+    "left_arm"
+   ],
+   "left_move_to_place": [
+    272,
+    292,
+    "left_arm"
+   ],
+   "left_open1": [
+    292,
+    302,
+    "left_eef"
+   ],
+   "left_place_to_up": [
+    302,
+    327,
+    "left_arm"
+   ]
+  }
+ },
+ "manipulate_pipette": {
+  "total_steps": 286,
+  "dataset_len": 286,
+  "scopes": [
+   "left_arm",
+   "left_eef",
+   "right_arm",
+   "right_eef"
+  ],
+  "segments": {
+   "ropen0": [
+    0,
+    10,
+    "right_eef"
+   ],
+   "init_to_pre1": [
+    0,
+    35,
+    "right_arm"
+   ],
+   "pre1_to_grasp": [
+    35,
+    70,
+    "right_arm"
+   ],
+   "rclose0": [
+    70,
+    100,
+    "right_eef"
+   ],
+   "grasp_to_up1": [
+    100,
+    125,
+    "right_arm"
+   ],
+   "up1_to_beaker1_pre": [
+    125,
+    150,
+    "right_arm"
+   ],
+   "beaker1_pre_to_beaker1": [
+    150,
+    175,
+    "right_arm"
+   ],
+   "left_init_to_beaker1": [
+    175,
+    205,
+    "left_arm"
+   ],
+   "left_beaker1_to_beaker1_press": [
+    205,
+    240,
+    "left_arm"
+   ],
+   "left_beaker1_press_to_beaker1_up": [
+    240,
+    275,
+    "left_arm"
+   ],
+   "open0": [
+    275,
+    286,
+    "left_eef"
+   ]
+  }
+ },
+ "mixer_operating": {
+  "total_steps": 316,
+  "dataset_len": 316,
+  "scopes": [
+   "left_arm",
+   "left_eef",
+   "right_arm",
+   "right_eef"
+  ],
+  "segments": {
+   "ropen_to_grasp": [
+    0,
+    12,
+    "right_eef"
+   ],
+   "left_init_to_button_pre": [
+    0,
+    60,
+    "left_arm"
+   ],
+   "right_init_to_grasp_pre": [
+    12,
+    72,
+    "right_arm"
+   ],
+   "right_beaker_grasp_pre_to_grasp": [
+    72,
+    117,
+    "right_arm"
+   ],
+   "rclose_grasp": [
+    117,
+    137,
+    "right_eef"
+   ],
+   "right_grasp_to_lift": [
+    137,
+    157,
+    "right_arm"
+   ],
+   "right_lift_to_place_pre": [
+    157,
+    192,
+    "right_arm"
+   ],
+   "right_place_pre_to_place": [
+    192,
+    214,
+    "right_arm"
+   ],
+   "ropen_place": [
+    214,
+    226,
+    "right_eef"
+   ],
+   "left_button_pre_to_touch": [
+    226,
+    251,
+    "left_arm"
+   ],
+   "right_place_to_place_pre": [
+    226,
+    261,
+    "right_arm"
+   ],
+   "left_button_touch_to_pre": [
+    251,
+    276,
+    "left_arm"
+   ],
+   "right_place_pre_to_up": [
+    261,
+    289,
+    "right_arm"
+   ],
+   "left_touch_pre_to_up": [
+    276,
+    304,
+    "left_arm"
+   ],
+   "lopen_final": [
+    304,
+    316,
+    "left_eef"
+   ]
+  }
+ },
+ "sample_loading": {
+  "total_steps": 372,
+  "dataset_len": 372,
+  "scopes": [
+   "left_arm",
+   "left_eef",
+   "right_arm",
+   "right_eef"
+  ],
+  "segments": {
+   "ropen0": [
+    0,
+    10,
+    "right_eef"
+   ],
+   "open0": [
+    0,
+    20,
+    "left_eef"
+   ],
+   "init_to_pre1": [
+    0,
+    35,
+    "right_arm"
+   ],
+   "pre1_to_grasp": [
+    35,
+    70,
+    "right_arm"
+   ],
+   "rclose0": [
+    70,
+    90,
+    "right_eef"
+   ],
+   "grasp_to_up1": [
+    90,
+    115,
+    "right_arm"
+   ],
+   "up1_to_up2": [
+    115,
+    150,
+    "right_arm"
+   ],
+   "left_init_to_takeover_pre": [
+    150,
+    200,
+    "left_arm"
+   ],
+   "left_pre_to_takeover": [
+    200,
+    220,
+    "left_arm"
+   ],
+   "close0": [
+    220,
+    240,
+    "left_eef"
+   ],
+   "ropen1": [
+    240,
+    251,
+    "right_eef"
+   ],
+   "up2_to_back": [
+    251,
+    275,
+    "right_arm"
+   ],
+   "left_takeover_to_pre1": [
+    251,
+    286,
+    "left_arm"
+   ],
+   "left_pre1_to_pre2": [
+    286,
+    301,
+    "left_arm"
+   ],
+   "left_pre2_to_pre": [
+    301,
+    316,
+    "left_arm"
+   ],
+   "left_pre_to_place": [
+    316,
+    331,
+    "left_arm"
+   ],
+   "open1": [
+    331,
+    342,
+    "left_eef"
+   ],
+   "left_place_to_pre": [
+    342,
+    357,
+    "left_arm"
+   ],
+   "left_pre_to_pre1": [
+    357,
+    372,
+    "left_arm"
+   ]
+  }
+ },
+ "table_rearrangement": {
+  "total_steps": 200,
+  "dataset_len": 200,
+  "scopes": [
+   "left_arm",
+   "left_eef",
+   "right_arm",
+   "right_eef"
+  ],
+  "segments": {
+   "left_init_to_pre2": [
+    0,
+    10,
+    "left_arm"
+   ],
+   "right_init_to_pre2": [
+    0,
+    10,
+    "right_arm"
+   ],
+   "lopen_grasp": [
+    10,
+    21,
+    "left_eef"
+   ],
+   "ropen_grasp": [
+    10,
+    21,
+    "right_eef"
+   ],
+   "left_pre2_to_pre1": [
+    10,
+    34,
+    "left_arm"
+   ],
+   "right_pre2_to_pre1": [
+    10,
+    34,
+    "right_arm"
+   ],
+   "left_pre1_to_grasp": [
+    34,
+    58,
+    "left_arm"
+   ],
+   "right_pre1_to_grasp": [
+    34,
+    58,
+    "right_arm"
+   ],
+   "lclose0": [
+    58,
+    69,
+    "left_eef"
+   ],
+   "rclose0": [
+    58,
+    69,
+    "right_eef"
+   ],
+   "left_grasp_to_up": [
+    69,
+    117,
+    "left_arm"
+   ],
+   "right_grasp_to_up": [
+    69,
+    117,
+    "right_arm"
+   ],
+   "left_up_to_place": [
+    117,
+    141,
+    "left_arm"
+   ],
+   "right_up_to_place": [
+    117,
+    141,
+    "right_arm"
+   ],
+   "left_place_to_place_down": [
+    141,
+    165,
+    "left_arm"
+   ],
+   "right_place_to_place_down": [
+    141,
+    165,
+    "right_arm"
+   ],
+   "lopen0": [
+    165,
+    176,
+    "left_eef"
+   ],
+   "ropen0": [
+    165,
+    176,
+    "right_eef"
+   ],
+   "left_place_down_back_to_after": [
+    176,
+    200,
+    "left_arm"
+   ],
+   "right_place_down_back_to_after": [
+    176,
+    200,
+    "right_arm"
+   ]
+  }
+ },
+ "water_pouring": {
+  "total_steps": 207,
+  "dataset_len": 207,
+  "scopes": [
+   "left_arm",
+   "left_eef",
+   "right_arm",
+   "right_eef"
+  ],
+  "segments": {
+   "lopen0": [
+    0,
+    11,
+    "left_eef"
+   ],
+   "ropen0": [
+    0,
+    11,
+    "right_eef"
+   ],
+   "left_init_to_pre1": [
+    0,
+    35,
+    "left_arm"
+   ],
+   "init_to_pre1": [
+    0,
+    35,
+    "right_arm"
+   ],
+   "left_pre1_to_grasp": [
+    35,
+    59,
+    "left_arm"
+   ],
+   "pre1_to_grasp": [
+    35,
+    59,
+    "right_arm"
+   ],
+   "lclose0": [
+    59,
+    70,
+    "left_eef"
+   ],
+   "rclose0": [
+    59,
+    70,
+    "right_eef"
+   ],
+   "righ_grasp_pause": [
+    59,
+    83,
+    "right_arm"
+   ],
+   "left_grasp_to_up": [
+    70,
+    74,
+    "left_arm"
+   ],
+   "grasp_to_up": [
+    83,
+    98,
+    "right_arm"
+   ],
+   "left_up_to_move": [
+    98,
+    118,
+    "left_arm"
+   ],
+   "up_to_move": [
+    118,
+    138,
+    "right_arm"
+   ],
+   "move_to_rotation": [
+    138,
+    173,
+    "right_arm"
+   ],
+   "left_move_to_end": [
+    173,
+    197,
+    "left_arm"
+   ],
+   "rotation_back_to_move": [
+    173,
+    197,
+    "right_arm"
+   ],
+   "stand": [
+    197,
+    207,
+    "right_arm"
+   ]
+  }
+ }
+}

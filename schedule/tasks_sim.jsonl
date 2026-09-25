@@ -1,0 +1,10 @@
+{"task_name": "click_bell", "task_index": 0, "task": "Click the bell"}
+{"task_name": "drawer_open_place", "task_index": 0, "task": "Open the drawer, pick the tomato with the other arm then place it in the drawer."}
+{"task_name": "handle_basket", "task_index": 0, "task": "Pick the bottle then place it to the basket, carry the basket with the other arm."}
+{"task_name": "item_assembly", "task_index": 0, "task": "Pick up two centrifuge tubes from the table and dock them horizontally."}
+{"task_name": "items_handover", "task_index": 0, "task": "Pick up the pen, hand it over to the other arm and then place it in to the pen holder"}
+{"task_name": "manipulate_pipette", "task_index": 0, "task": "Use the pipette on the table to transfer liquid from one beaker to another"}
+{"task_name": "mixer_operating", "task_index": 0, "task": "Pick the beaker, place it on the mixer, then flip the toggle switch with the other arm."}
+{"task_name": "sample_loading", "task_index": 0, "task": "Pick up the test tube, and it to the other arm, and insert it to the rack."}
+{"task_name": "table_rearrangement", "task_index": 0, "task": "Pick the fork and the spoon, place them next to the plate."}
+{"task_name": "water_pouring", "task_index": 0, "task": "Pick the cup and the bottle with the other arm, pour the water from bottle to cup"}
