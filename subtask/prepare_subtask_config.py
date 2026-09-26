@@ -43,12 +43,28 @@ OPT_B = '''    extra_delta_transform: bool = False
     subtask_ends: tuple[int, ...] = ()
     subtask_sentences: tuple[str, ...] = ()'''.format(mark=MARK)
 
-WIRE_A = '''                )
+WIRE_A = '''                        "frame_index": "frame_index",
+                    }
+                )
             ]
         )
+'''
+WIRE_B = WIRE_A + '''
+        # {mark}: repack 그룹에 넣는다. Group.push 는 **뒤에** 붙으므로
+        # data_transforms 에 넣으면 EmbodiChainInputs 뒤가 되고, 거기서 dict 를 새로
+        # 만들며 frame_index 가 이미 사라진 뒤다. repack 은 학습에만 적용되는데
+        # (추론에는 적용되지 않는다) subtask 주입도 학습에서만 필요하니 여기가 맞다.
+        #
+        # 앵커는 바로 위 frame_index 줄이다 — 우리가 넣은 것이라 유일하고 반드시
+        # LeRobotEmbodiChainDataConfig 안에 있다. 예전 앵커(data_transforms 블록)는
+        # LeRobotLiberoDataConfig 에도 똑같이 있어서 그쪽에 들어갔다 (2026-09-26 두 번째).
+        if self.subtask_sentences:
+            repack_transform = repack_transform.push(
+                inputs=[_transforms.InjectSubtask(ends=self.subtask_ends,
+                                                  sentences=self.subtask_sentences)],
+            )
+'''.replace("{mark}", MARK)
 
-        # The data transforms are applied to the data coming from the dataset *and* during inference.'''
-WIRE_B = '                )\n            ]\n        )\n\n        # RSC_SUBTASK_CFG: repack 그룹에 넣는다. Group.push 는 **뒤에** 붙으므로\n        # data_transforms 에 넣으면 EmbodiChainInputs 뒤가 되고, 거기서 dict 를 새로\n        # 만들며 frame_index 가 이미 사라진 뒤다. repack 은 학습에만 적용되는데\n        # (추론에는 적용되지 않는다) subtask 주입도 학습에서만 필요하니 여기가 맞다.\n        if self.subtask_sentences:\n            repack_transform = repack_transform.push(\n                inputs=[_transforms.InjectSubtask(ends=self.subtask_ends,\n                                                  sentences=self.subtask_sentences)],\n            )\n\n        # The data transforms are applied to the data coming from the dataset *and* during inference.'.replace("RSC_SUBTASK_CFG", MARK)
 
 
 def build_block(sched: pathlib.Path) -> str:
@@ -107,7 +123,8 @@ def main() -> None:
         print(f"{cfg}: 이미 적용됨")
         return
     anchor = f'        name="{BASE}",'
-    missing = [n for n, a in (("repack", REPACK_A), ("opt", OPT_A), ("wire", WIRE_A),
+    # WIRE_A 는 REPACK 적용 후에야 생기므로 여기서 검사하지 않는다.
+    missing = [n for n, a in (("repack", REPACK_A), ("opt", OPT_A),
                               ("config 앵커", anchor)) if a not in s]
     if missing:
         sys.exit(f"✗ 앵커 없음: {missing} — prepare_handover.py 가 먼저 돌아야 한다")
@@ -115,8 +132,13 @@ def main() -> None:
         print("미적용 (적용 가능)")
         sys.exit(1)
 
-    s = s.replace(REPACK_A, REPACK_B, 1)
-    s = s.replace(OPT_A, OPT_B, 1)
+    # 순서 중요: REPACK 이 먼저 들어가야 WIRE 앵커(frame_index 줄)가 생긴다.
+    for name, a, b in (("REPACK", REPACK_A, REPACK_B), ("OPT", OPT_A, OPT_B)):
+        if s.count(a) != 1:
+            sys.exit(f"✗ {name} 앵커가 {s.count(a)}곳 — 더 좁혀야 한다")
+        s = s.replace(a, b, 1)
+    if s.count(WIRE_A) != 1:
+        sys.exit(f"✗ WIRE 앵커가 {s.count(WIRE_A)}곳 — 더 좁혀야 한다")
     s = s.replace(WIRE_A, WIRE_B, 1)
 
     block = build_block(sched)

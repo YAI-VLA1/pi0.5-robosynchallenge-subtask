@@ -260,7 +260,7 @@ EDITS = [
 ]
 
 
-def patch_one(root: pathlib.Path, rel: str, edits, check: bool) -> bool:
+def patch_one(root: pathlib.Path, rel: str, edits, check: bool, scope: str | None = None) -> bool:
     p = root / rel
     if not p.exists():
         print(f"  {rel}: 파일 없음")
@@ -269,20 +269,32 @@ def patch_one(root: pathlib.Path, rel: str, edits, check: bool) -> bool:
     if MARK in s:
         print(f"  {rel}: 이미 적용됨")
         return True
+    # scope 가 주어지면 그 클래스 본문 안에서만 찾는다. libero_policy.py 의
+    # `if "prompt" in data:` 는 LiberoInputs 와 EmbodiChainInputs 양쪽에 똑같이 있다.
+    lo, hi = 0, len(s)
+    if scope is not None:
+        if scope not in s:
+            print(f"  {rel}: ✗ 클래스 {scope} 를 못 찾음")
+            return False
+        lo = s.index(scope)
+        nxt = s.find("\nclass ", lo + 1)
+        hi = nxt if nxt != -1 else len(s)
+    body = s[lo:hi]
     for a, _ in edits:
         # 앵커가 여러 곳에 있으면 replace(...,1) 이 엉뚱한 클래스를 잡는다.
         # config.py 와 libero_policy.py 에서 실제로 그렇게 당했다 (2026-09-25).
-        if s.count(a) > 1:
-            print(f"  {rel}: ✗ 앵커가 {s.count(a)}곳에 있다 — 더 좁혀야 한다\n      {a.splitlines()[0][:90]!r}")
+        if body.count(a) > 1:
+            print(f"  {rel}: ✗ 앵커가 {body.count(a)}곳에 있다 — 더 좁혀야 한다\n      {a.splitlines()[0][:90]!r}")
             return False
-        if a not in s:
+        if a not in body:
             print(f"  {rel}: ✗ 앵커 없음 — 업스트림이 바뀌었다\n      {a.splitlines()[0][:90]!r}")
             return False
     if check:
         print(f"  {rel}: 미적용 (적용 가능)")
         return False
     for a, b in edits:
-        s = s.replace(a, b, 1)
+        body = body.replace(a, b, 1)
+    s = s[:lo] + body + s[hi:]
     if rel == PI0 and "import optax" not in s:
         s = s.replace("import jax.numpy as jnp", "import jax.numpy as jnp\nimport optax", 1)
     p.write_text(s)
@@ -295,8 +307,9 @@ def main() -> None:
     check = "--check" in sys.argv
     print(f"{'확인' if check else '적용'}: {root}")
     ok = True
+    scopes = {POL: "class EmbodiChainInputs"}
     for rel, edits in EDITS:
-        ok &= patch_one(root, rel, edits, check)
+        ok &= patch_one(root, rel, edits, check, scopes.get(rel))
     if check:
         sys.exit(0 if ok else 1)
     if not ok:

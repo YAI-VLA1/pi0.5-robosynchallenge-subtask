@@ -147,3 +147,52 @@ flow 에 차이가 나면 어느 쪽인지 이 비교로는 못 가른다. 차�
 뜻이라 그대로 간다. 차이가 크면 `PI05_SUBTASK_W=0` + Task 제거만 한 런이 필요하다.
 
 baseline 체크포인트 경로는 `checkpoints/<step>/...` 다 (`<step>/...` 가 아니다).
+
+---
+
+# 2026-09-26 파드 복구 — 버그 5개
+
+파드가 죽어 `/workspace` 가 통째로 날아갔다. HF 에 34,000 까지 올라가 있어 실제 손실은
+300스텝(7분)뿐이었지만, **복구 경로에서 버그가 5개 나왔다.** 전부 "파드가 죽었을 때만
+실행되는 코드"라 평소 검증되지 않던 것들이다.
+
+| 버그 | 증상 | 잡은 단서 |
+|---|---|---|
+| 앵커 중복 (`libero_policy.py`) | 패치 중단 | 유일성 가드 |
+| 체크포인트 회수 실패 무시 | **step 0 부터 재학습** | 로그의 Traceback |
+| `wandb_id.txt` 미백업 | `--resume` 실패 | FileNotFoundError |
+| 라이브 수정 4건 미반영 | 프롬프트 불일치, loss 0.015 -> **10.25** | loss 값 + 지표 실종 |
+| 앵커 중복 (`config.py`) | subtask 미주입, CE **4.25** | **acc == acc_first** |
+
+## 근본 원인 둘
+
+**① `replace(anchor, new, 1)` 이 첫 일치를 잡는다 (3번 당했다).**
+openpi 는 DataConfig/Inputs 클래스가 여러 개고 본문이 거의 같다. 해법 두 가지:
+* 클래스 범위를 지정해 그 안에서만 치환 (`apply_subtask_patch.py` 의 `scope`)
+* **우리가 넣은 줄을 앵커로 삼는다** — `"frame_index": "frame_index",` 는 유일하고
+  반드시 올바른 클래스 안에 있다 (`prepare_subtask_config.py`)
+둘 다에 유일성 검사를 넣었다. 검사가 없으면 "패치했는데 아무 일도 안 일어남"이 된다.
+
+**② 라이브 파일을 손으로 고치고 패치 스크립트에 반영하지 않았다.**
+반복 수정 중 4건이 그렇게 빠졌다 (Task 제거, EOS 종료, 정확도 지표, 분리 로깅).
+→ `apply_subtask_v2.py` 로 델타를 따로 묶었다. **고쳤으면 그 자리에서 스크립트에 반영할 것.**
+
+## 진단에 쓴 신호
+
+* `loss` 값이 재개 직후 이전 궤적과 다르면 **입력이 달라진 것**이다. 가중치는 맞게
+  올라왔는데 프롬프트가 바뀌면 정확히 이렇게 된다.
+* `subtask_acc == subtask_acc_first` 가 소수점까지 같으면 **마스크에 자리가 하나뿐**이고,
+  그건 슬롯 첫 자리가 이미 EOS = 문장이 안 들어갔다는 뜻이다.
+* wandb 지표가 **사라지면** 그 코드 경로가 아예 빠진 것이다 (여기서는 train.py has_aux).
+
+## 복구 절차 (다음부터)
+
+```
+bash /root/rsc_recover/bootstrap_subtask.sh          # 환경 + 패치 3종 + 체크포인트 + 기동
+```
+**그리고 학습을 믿기 전에 반드시:**
+```
+<venv> /root/rsc_recover/subtask/smoke.py            # 주입/프롬프트/EOS 검증
+첫 Step 로그에서 loss/flow 와 loss/subtask_acc_first 가 이전 궤적과 맞는지 확인
+```
+오늘 세 번을 "띄우고 나서 발견"했다. smoke 는 `/root` 에 둔다 — `/workspace` 는 사라진다.
