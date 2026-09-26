@@ -80,7 +80,7 @@ policy 가 실제로 못 한 단계를 예측기가 정확히 거부한다. 최�
 실제로 가고, phase 7 과 8 은 그리퍼 개도로만 갈린다. **가장 필요한 판별이 최약점이다.**
 따라서 기대 이득은 "닫아라"라는 trigger 가 아니라 **"아직 넘어가지 마라"라는 순서 신호** 쪽이다.
 
-## step 2 — 구현 (진행 중)
+## step 2 — 구현 (학습 진행 중)
 
 prompt 에 Subtask 슬롯을 만들고, 그 토큰 위치에만 CE 손실을 건다.
 추론 때는 그 자리를 모델이 autoregressive 로 생성한 뒤 flow matching 을 돌린다.
@@ -111,6 +111,45 @@ PaliGemma 의 언어 prior 를 쓰고, 나중에 10개 태스크를 합칠 때
 **scheduled sampling**: 학습 내내 GT 를 넣으면 추론 때 자기 예측이 들어오는 순간 새
 covariate shift 가 생긴다. `RSC_SUBTASK_SS_START` 부터 확률을 선형으로 올려 GT 대신
 모델 예측을 넣는다. **기본값 0(비활성)** — 먼저 teacher forcing 으로 baseline 과 비교한 뒤 켠다.
+
+### 진행 상황 (2026-09-26 02:50, step 22000 / 82000)
+
+| step | `loss/flow` | `loss/subtask_ce` | `loss/subtask_acc_first` |
+|---|---|---|---|
+| 0 | 0.2958 | 6.3383 | 0.0000 |
+| 1000 | 0.0511 | 0.0647 | 0.8825 |
+| 5000 | 0.0131 | 0.0226 | 0.9475 |
+| 10000 | 0.0079 | 0.0190 | 0.9650 |
+| 20000 | 0.0052 | 0.0163 | 0.9600 |
+
+`subtask_acc_first` 는 슬롯 첫 토큰의 정확도다. teacher forcing 에서 뒤쪽 단어는
+언어 모델이면 그냥 맞히므로(전체 정확도 99.5%) **첫 토큰만이 "장면을 보고 phase 를
+아는가"를 잰다.**
+
+flow 비교 기준선: baseline 체크포인트 step 10000 을 같은 스크립트로 재면 **0.00421**.
+(wandb 값과 직접 비교하면 안 된다 — 그쪽은 학습 중 랜덤 time 추출 값이다.)
+
+### 구현 중 잡은 함정 세 가지
+
+1. **prefix 가 완전 양방향이다.** `embed_prefix` 의 `ar_mask` 가 전부 False 라 위치 p 가
+   토큰 p+1 을 이미 본다. 다음 토큰 예측 CE 가 '복사'로 풀린다 — step 0 의 7.29 가
+   800스텝 만에 0.046 으로 무너지는 것으로 드러났다. `make_attn_mask` 가 샘플별 마스크를
+   받으므로 **슬롯 자리만 causal 블록**으로 만들었다. 부작용으로 `compute_loss` 의
+   `concatenate([prefix_ar_mask, suffix_ar_mask], axis=0)` 이 깨지니 같이 고쳐야 한다.
+2. **패딩까지 CE 를 걸면 40% 가 낭비다.** 문장+EOS 가 5~13토큰, 슬롯 14 → 패딩 39.5%.
+   EOS(id 1)로 끝내고 그 뒤를 손실에서 뺐다. `token_loss_mask` 는 슬롯 전체를 덮은 채로
+   둔다 — attention 의 causal 블록 경계로도 쓰이므로 줄이면 구조가 깨진다.
+3. **teacher forcing 전체 정확도는 의미가 없다.** 98.66% 가 나와도 CE 는 2.36 이었다.
+
+전체 기록은 [`results/findings_step2.md`](results/findings_step2.md).
+
+### 복구
+
+```
+bash bootstrap_subtask.sh
+```
+빈 /workspace 에서 환경 → 패치 3종 → config → HF 체크포인트 회수 → 학습·업로더까지.
+전부 멱등이다. 패치는 앵커가 안 맞으면 즉시 멈춘다(업스트림이 바뀐 것이므로).
 
 ### 비교 설계
 
