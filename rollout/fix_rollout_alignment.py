@@ -31,6 +31,10 @@ def main():
     (dst / "meta").mkdir(parents=True)
 
     info = json.loads((src / "meta/info.json").read_text())
+    # 이중 shift 방지. 한 번 더 밀면 (o_{t+1}, a_{t+2}) 가 되어 조용히 더 나빠진다.
+    if info.get("rsc_alignment_fixed"):
+        sys.exit(f"★ {src} 는 이미 정렬 복구된 데이터다 (meta/info.json 의 "
+                 f"rsc_alignment_fixed). 원본(raw) 을 넘길 것.")
     eps  = {json.loads(l)["episode_index"]: json.loads(l)
             for l in (src / "meta/episodes.jsonl").read_text().splitlines()}
 
@@ -71,6 +75,7 @@ def main():
             shutil.copy(src / f, dst / f)
 
     info = dict(info)
+    info["rsc_alignment_fixed"] = True     # 이중 적용 방지 표시
     info["total_frames"] = running
     (dst / "meta/info.json").write_text(json.dumps(info, indent=4))
     (dst / "meta/episodes.jsonl").write_text(

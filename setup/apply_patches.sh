@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # 소스 패치 전부를 **의존 순서대로** 적용한다. 멱등하다.
 #
-#   bash apply_patches.sh <repo 루트> [--subtask] [--mistake] [--mem]
+#   bash apply_patches.sh <repo 루트> [--subtask] [--mistake] [--mem] [--recording]
+#
+#   --recording 은 평가 중 롤아웃을 저장할 때만 필요하다 (학습에는 불필요).
 #
 # 순서가 왜 이런가 (리뷰 R3 — 실제로 깨졌던 순서를 고친 것)
 #   prepare_repo       cos40k TrainConfig 를 넣는다. prepare_handover 의 삽입 기준점이다.
@@ -20,10 +22,12 @@ shift || true
 P=$R/policy/pi05
 SCHED=${SCHED:-$REC/schedule/schedule_sim.json}
 
-SUB=0; MIS=0; MEM=0
+SUB=0; MIS=0; MEM=0; REC_ROLL=0
 for a in "$@"; do case "$a" in
   --subtask) SUB=1 ;; --mistake) MIS=1 ;; --mem) MEM=1 ;;
+  --recording) REC_ROLL=1 ;;
   --all) SUB=1; MIS=1; MEM=1 ;;
+  "") ;;                       # 빈 인자는 무시 (빈 배열 전개 방어)
   *) echo "모르는 인자: $a"; exit 1 ;;
 esac; done
 # mistake 구현은 subtask 가 만든 frame_index 앵커를 쓴다. 혼자서는 못 돈다.
@@ -50,9 +54,18 @@ if [ "$SUB" = 1 ]; then
   python3 "$REC/subtask/prepare_subtask_config.py" "$P" "$SCHED" > /dev/null
 fi
 
-# 롤아웃 녹화의 (obs, action) 정렬. 평가 스크립트가 있을 때만 (리뷰 R1).
-if [ -f "$R/scripts/eval_policy.py" ]; then
-  say "apply_rollout_align (녹화 (o_t, a_t) 정렬)"
+# 롤아웃 녹화. --recording 을 줬을 때만 설치한다.
+#   align 패치의 앵커는 record2 가 만든 코드다. 깨끗한 upstream 에는 그 코드가
+#   없어서, 조건을 "eval_policy.py 가 있으면" 으로 두면 fresh 설치가 여기서
+#   exit 1 로 멈춘다 (리뷰 N2). 학습만 할 때는 녹화가 필요 없다.
+if [ "$REC_ROLL" = 1 ]; then
+  say "apply_rollout_record2 (롤아웃 녹화)"
+  python3 "$REC/rollout/apply_rollout_record2.py" "$R" > /dev/null
+  say "apply_rollout_align (녹화 (o_t, a_t) 정렬 — record2 뒤에 와야 한다)"
+  python3 "$REC/rollout/apply_rollout_align.py" "$R" > /dev/null
+elif grep -q "_roll" "$R/scripts/eval_policy.py" 2>/dev/null; then
+  # 이미 녹화가 깔린 checkout 이면 정렬만 맞춘다 (기존 머신 복구 경로).
+  say "apply_rollout_align (기존 녹화 코드에 정렬만)"
   python3 "$REC/rollout/apply_rollout_align.py" "$R" > /dev/null
 fi
 

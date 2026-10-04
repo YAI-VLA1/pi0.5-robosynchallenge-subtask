@@ -45,16 +45,23 @@ export HF_TOKEN=hf_...
 python3 $REC/fetch_subtask_ckpt.py \
   yai-robosync/pi05-items-handover-subtask-cos82k  $WS/ckpt
 
-# 3) 전체 세팅 (저장소 + venv + 데이터 + 패치 + norm_stats + 검증)
-NORM_FROM_CKPT=$WS/ckpt/81999 bash $REC/setup/setup_train.sh --all   # 약 20분
+# 3) 1단계 — 성공 데모 + subtask + MEM 만. 실패 데이터는 아직 안 쓴다.
+NORM_FROM_CKPT=$WS/ckpt/81999 bash $REC/setup/setup_train.sh --subtask --mem   # 약 20분
 
-# 4) 학습 — 기존 체크포인트에서 가중치만 받아 12k 더
-python3 $REC/mistake/prepare_posttrain_config.py $WS/RoboSynChallenge/policy/pi05 \
-  pi05_robosyn_items_handover_subtask_mistake_cos82k  $WS/ckpt/81999  12000
-CONFIG=pi05_robosyn_items_handover_subtask_mistake_cos82k_post12k \
-PI05_SUBTASK_W=1.0 PI05_MISTAKE=1 PI05_MEM_FRAMES=6 \
-bash $REC/setup/train.sh
+export PI05=$WS/RoboSynChallenge/policy/pi05
+python3 $REC/mistake/prepare_posttrain_config.py $PI05 \
+  pi05_robosyn_items_handover_subtask_cos82k  $WS/ckpt/81999  12000
+
+CONFIG=pi05_robosyn_items_handover_subtask_cos82k_post12k \
+PI05_SUBTASK_W=1.0 PI05_MEM_FRAMES=6 bash $REC/setup/train.sh
 ```
+
+**1단계를 먼저 통과시킬 것.** 실패 데이터(mistake)는 정렬 복구와 라벨 파이프라인을
+확인한 뒤 2단계에서 붙인다 — §4.2.
+
+> `--recording` 은 **평가 중 롤아웃을 저장할 때만** 필요하다. 학습 설치에는 넣지 않는다.
+> 녹화 패치(`apply_rollout_record2`)가 없는 깨끗한 upstream 에 정렬 패치만 걸면
+> 앵커가 없어 설치가 거기서 멈춘다.
 
 `setup_train.sh` 는 멱등하다. 중간에 끊겨도 다시 돌리면 된다. 마지막에
 패치 검증(문자열)과 **config 로드 검증**(실제 import + norm_stats 확인)을 둘 다 돌린다.
@@ -207,17 +214,45 @@ export PI05_SUBTASK_W=1.0      # CE 가중치. 0 이면 완전히 꺼진다
 프롬프트에 `Mistake: true` / `Mistake: false` 를 넣는다.
 실패 롤아웃에서 **실수 시점 50프레임 전부터** true 다.
 
-먼저 데이터셋을 만들어야 한다 (실패 롤아웃이 필요):
+먼저 데이터셋을 만들어야 한다 (실패 롤아웃이 필요). **순서가 중요하다** —
+HF 에 올려 둔 롤아웃은 **정렬 복구 전(raw)** 이다.
 
 ```bash
-# 롤아웃 100개를 HF 에서 받는다 (직접 수집하려면 rollout/collect_subtask.sh)
-huggingface-cli download yai-robosync/handover-rollouts --repo-type dataset \
-  --include "subtask/*" --local-dir /tmp/rollouts
+export PI05=$WS/RoboSynChallenge/policy/pi05
 
-python3 $REC/mistake/mistake_labels.py      /tmp/rollouts/subtask    # 라벨 + 절단 지점
-python3 $REC/mistake/merge_mistake_ds.py                             # 데모+롤아웃 병합
-python3 $REC/mistake/prepare_mistake_config.py $PI05                 # TrainConfig 2개
+# ① raw 롤아웃 100개를 받는다 (직접 수집하려면 rollout/collect_subtask.sh)
+huggingface-cli download yai-robosync/handover-rollouts --repo-type dataset \
+  --include "subtask/*" --local-dir $WS/rollouts
+
+# ② (obs, action) 정렬 복구 — 이걸 건너뛰면 한 스텝 어긋난 데이터로 학습한다
+$PI05/.venv/bin/python $REC/rollout/fix_rollout_alignment.py \
+  $WS/rollouts/subtask  $WS/rollouts/subtask_aligned
+#    이미 복구된 데이터를 또 넣으면 meta 의 rsc_alignment_fixed 를 보고 멈춘다
+
+# ③ 라벨 + 절단 지점 (복구본 기준으로 다시 계산해야 한다)
+$PI05/.venv/bin/python $REC/mistake/mistake_labels.py $WS/rollouts/subtask_aligned
+
+# ④ 데모 + 롤아웃 병합
+PI05=$PI05 ROLLOUTS=$WS/rollouts/subtask_aligned \
+  $PI05/.venv/bin/python $REC/mistake/merge_mistake_ds.py
+
+# ⑤ TrainConfig 2개 등록 + 통계 배치
+python3 $REC/mistake/prepare_mistake_config.py $PI05
+for C in pi05_robosyn_items_handover_mistake_cos82k \
+         pi05_robosyn_items_handover_subtask_mistake_cos82k; do
+  D=$PI05/assets/$C/RoboSynChallenge/cobotmagic_Sim_items_handover
+  mkdir -p $D && cp $WS/ckpt/81999/assets/RoboSynChallenge/cobotmagic_Sim_items_handover/norm_stats.json $D/
+done
+
+# ⑥ 검증
+cd $PI05 && env PYTHONPATH=src HF_LEROBOT_HOME=$PI05/training_data PI05_MISTAKE=1 PI05_SUBTASK_W=1.0 \
+  .venv/bin/python $REC/patches/verify_configs.py \
+  pi05_robosyn_items_handover_mistake_cos82k pi05_robosyn_items_handover_subtask_mistake_cos82k
 ```
+
+`setup_train.sh --all` 은 병합 데이터셋이 없으면 mistake TrainConfig 를 만들지
+않고 검증 목록에서도 뺀다. 위 ①~⑥ 을 끝낸 뒤 `apply_patches.sh` 를 다시 돌리거나
+⑤ 를 직접 실행하면 등록된다.
 
 `merge_mistake_ds.py` 는 데모 parquet·영상을 **심볼릭 링크**로 둔다 (복사 없음).
 롤아웃 parquet 98개만 새로 쓴다. 결과: 1,098 에피소드 / 341,252 프레임,
@@ -529,6 +564,19 @@ Runpod 이전 전에 받은 리뷰에서 지적된 것들. **확인한 항목은
 
 복구 후 `mistake_labels` 를 다시 돌리면 `t_fail` 중앙값이 86 → 85 로 한 프레임
 움직인다. 분류(A 92 / B 5 / C 2 / D 1)는 그대로다.
+
+### 재리뷰 (72d7e96) 에서 추가로 나온 것
+
+| | 문제 | 상태 |
+|---|---|---|
+| N1 | posttrain 생성기가 marker 를 같이 복사해 config.py 를 SyntaxError 로 만들고 **exit 0** | AST 로 호출 범위 추출 · 쓰기 전 `ast.parse` · atomic write |
+| N2 | fresh upstream 에 녹화 패치 없이 정렬 패치를 걸어 설치가 멈춤 | `--recording` 옵션, record2 → align 순서 |
+| N3 | `--all` 이 병합 데이터셋 없이 mistake config 를 검증 | 없으면 목록에서 제외 + §4.2 2단계 절차 |
+| N4 | `"${OPTS[@]:-}"` 가 빈 배열에서 **빈 문자열 1개**를 만듦 | `"${OPTS[@]}"` |
+| N5 | norm_stats 를 자기 자신에게 `cp` → exit 1 → `set -e` 로 중단 | `-ef` 로 같은 파일이면 건너뜀 |
+
+fresh worktree(upstream 9815e9e)에서 `--all`, `--all --recording`, 재실행,
+mix 유/무 네 경우를 실제로 돌려 확인했다.
 
 ### 아직 남은 설계 과제
 

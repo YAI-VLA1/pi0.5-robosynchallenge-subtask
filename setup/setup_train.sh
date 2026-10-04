@@ -73,7 +73,8 @@ print('    lerobot', lerobot.__version__, '· 장치', jax.devices())"
 # ★ clone 여부와 무관하게 매번 돈다. 예전에 clone 블록 안에 뒀다가 저장소가
 #   이미 있는 경로로 재구축했을 때 손실 마스킹이 통째로 빠졌다 (리뷰 R3 와 같은 뿌리).
 step "패치 적용"
-bash "$REC/setup/apply_patches.sh" "$R" "${OPTS[@]:-}"
+# ${OPTS[@]:-} 는 빈 배열에서 **빈 문자열 1개**를 만든다 (argc=1). 리뷰 N4.
+bash "$REC/setup/apply_patches.sh" "$R" "${OPTS[@]}"
 
 # ── 5. 데이터 (8.5GB) ───────────────────────────────────────────────────
 NPQ=$(count_files "$DATA/data" '*.parquet')
@@ -113,6 +114,9 @@ fi
 for C in $(printf '%s\n' "${CONFIGS[@]}" | sort -u); do
   D=$PI05/assets/$C/$ASSET_ID
   mkdir -p "$D"
+  # 같은 파일에 cp 하면 exit 1 이고 set -e 로 setup 이 죽는다. baseline 이
+  # CONFIGS 에 항상 들어 있어서 NORM_FROM_CKPT 가 없을 때 반드시 걸린다. 리뷰 N5.
+  if [ "$NS_SRC" -ef "$D/norm_stats.json" ]; then continue; fi
   cp "$NS_SRC" "$D/norm_stats.json"
 done
 step "norm_stats 배치 완료: $(printf '%s ' $(printf '%s\n' "${CONFIGS[@]}" | sort -u))"
@@ -120,9 +124,24 @@ step "norm_stats 배치 완료: $(printf '%s ' $(printf '%s\n' "${CONFIGS[@]}" |
 # ── 7. 하드 체크 ────────────────────────────────────────────────────────
 step "패치 검증"
 VA=""
-printf '%s\n' "${OPTS[@]:-}" | grep -q -- --all && VA="--all"
-[ -z "$VA" ] && for o in "${OPTS[@]:-}"; do VA="$VA $o"; done
+if [ ${#OPTS[@]} -gt 0 ]; then
+  printf '%s\n' "${OPTS[@]}" | grep -q -- --all && VA="--all"
+  [ -z "$VA" ] && for o in "${OPTS[@]}"; do VA="$VA $o"; done
+fi
 python3 "$REC/patches/verify_patches.py" "$R" $VA
+
+# 병합 데이터셋이 없으면 mistake TrainConfig 가 등록되지 않는다 (apply_patches 가
+# 건너뛴다). 그걸 검증 목록에 남겨 두면 fresh 설치가 여기서 실패한다. 리뷰 N3.
+MIX=$PI05/training_data/RoboSynChallenge/cobotmagic_Sim_items_handover_mix/meta/mistake_starts.json
+if [ ! -f "$MIX" ]; then
+  LEFT=()
+  for C in "${CONFIGS[@]}"; do case "$C" in *mistake*) ;; *) LEFT+=("$C") ;; esac; done
+  if [ ${#LEFT[@]} -ne ${#CONFIGS[@]} ]; then
+    echo ">>> 병합 데이터셋이 없어 mistake config 는 아직 없다 — 검증에서 제외"
+    echo "    실패 롤아웃으로 만들려면: SETUP.md §4.2"
+  fi
+  CONFIGS=("${LEFT[@]}")
+fi
 
 step "config 로드 검증 (문자열 검사만으로는 깨진 config 를 못 잡는다 — 리뷰 지적)"
 ( cd "$PI05" && env PYTHONPATH=src HF_LEROBOT_HOME="$PI05/training_data" \
