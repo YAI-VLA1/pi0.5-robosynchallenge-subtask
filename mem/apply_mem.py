@@ -338,7 +338,98 @@ N_V2D = (
     '        x_2d = jnp.reshape(encoded, [encoded.shape[0], h, w, -1])'
 )
 
+# ── 데이터→모델 배선: (T,C,H,W) 통과 + frame_valid ───────────────────
+# _parse_image 는 (C,H,W) 만 알고 있어 히스토리가 오면 (T,C,H,W) 를 그대로 흘린다.
+A_PARSE = (
+    'def _parse_image(image) -> np.ndarray:\n'
+    '    image = np.asarray(image)\n'
+    '    if np.issubdtype(image.dtype, np.floating):\n'
+    '        image = (255 * image).astype(np.uint8)\n'
+    '    if image.shape[0] == 3:\n'
+    '        image = einops.rearrange(image, "c h w -> h w c")\n'
+    '    return image'
+)
+N_PARSE = (
+    'def _parse_image(image) -> np.ndarray:\n'
+    '    image = np.asarray(image)\n'
+    '    if np.issubdtype(image.dtype, np.floating):\n'
+    '        image = (255 * image).astype(np.uint8)\n'
+    '    if image.ndim == 4 and image.shape[1] == 3:\n'
+    '        # MEM 히스토리: (T,C,H,W) -> (T,H,W,C). resize_with_pad 는 *b h w c 를\n'
+    '        # 받으므로 프레임마다 독립적으로 리사이즈된다.\n'
+    '        image = einops.rearrange(image, "t c h w -> t h w c")\n'
+    '    elif image.shape[0] == 3:\n'
+    '        image = einops.rearrange(image, "c h w -> h w c")\n'
+    '    return image'
+)
+
+# Observation 에 frame_valid 를 단다 (기본 None = 기존과 동일)
+A_OBS = '    tokenized_prompt: at.Int[ArrayT, "*b l"] | None = None'
+N_OBS = (
+    '    # MEM: 프레임별 유효 여부 (카메라별 (*b, T)). None 이면 히스토리 없음.\n'
+    '    frame_valid: dict[str, at.Bool[ArrayT, "*b t"]] | None = None\n'
+    '    tokenized_prompt: at.Int[ArrayT, "*b l"] | None = None'
+)
+
+# ── repack 이 _is_pad 를 통과시키게 (MEM 일 때만) ────────────────────
+A_RP = (
+    '                        "observation/state": self.state_key,\n'
+    '                        "actions": "action",'
+)
+N_RP = (
+    '                        "observation/state": self.state_key,\n'
+    '                        "actions": "action",\n'
+    '                        # MEM: LeRobot 이 주는 프레임 유효 마스크. repack 은 매핑에\n'
+    '                        # 없는 키를 버리므로 여기서 명시해야 frame_valid 가 살아 간다.\n'
+    '                        **({"observation/image_is_pad": self.image_key_high + "_is_pad",\n'
+    '                            "observation/left_wrist_image_is_pad": self.image_key_left + "_is_pad",\n'
+    '                            "observation/right_wrist_image_is_pad": self.image_key_right + "_is_pad"}\n'
+    '                           if __import__("os").environ.get("PI05_MEM_FRAMES", "1") != "1" else {}),'
+)
+
+# ── EmbodiChainInputs 가 frame_valid 를 만든다 ───────────────────────
+A_IN = (
+    '            "image_mask": {'
+)
+N_IN = (
+    '            # MEM: is_pad(True=패딩) 를 뒤집어 frame_valid 로 만든다.\n'
+    '            **({"frame_valid": {\n'
+    '                "base_0_rgb": ~np.asarray(data["observation/image_is_pad"]),\n'
+    '                "left_wrist_0_rgb": ~np.asarray(data["observation/left_wrist_image_is_pad"]),\n'
+    '                "right_wrist_0_rgb": ~np.asarray(data["observation/right_wrist_image_is_pad"]),\n'
+    '            }} if "observation/image_is_pad" in data else {}),\n'
+    '            "image_mask": {'
+)
+
+# ── embed_prefix 가 frame_valid 를 비전 타워에 넘긴다 ────────────────
+A_EP = '            image_tokens, _ = self.PaliGemma.img(obs.images[name], train=False)'
+N_EP = (
+    '            _fv = None if obs.frame_valid is None else obs.frame_valid.get(name)\n'
+    '            image_tokens, _ = (\n'
+    '                self.PaliGemma.img(obs.images[name], train=False)\n'
+    '                if _fv is None\n'
+    '                else self.PaliGemma.img(obs.images[name], train=False, frame_valid=_fv)\n'
+    '            )'
+)
+
+def _patch(root, rel, pairs, marker):
+    q = root / rel
+    t = q.read_text()
+    if marker in t:
+        print(f"  {rel}: 이미 적용됨"); return
+    for a, _ in pairs:
+        if t.count(a) != 1:
+            sys.exit(f"  {rel}: 앵커가 {t.count(a)}개 — 중단\n{a[:70]}")
+    for a, n in pairs:
+        t = t.replace(a, n, 1)
+    q.write_text(t); print(f"  {rel}: 적용")
+
+
 def main():
+    root = pathlib.Path(sys.argv[1])
+    _patch(root, "src/openpi/policies/libero_policy.py", [(A_PARSE, N_PARSE)], "MEM 히스토리: (T,C,H,W)")
+    _patch(root, "src/openpi/models/model.py", [(A_OBS, N_OBS)], "frame_valid")
+    _patch(root, "src/openpi/models/pi0.py", [(A_EP, N_EP)], "obs.frame_valid")
     p = pathlib.Path(sys.argv[1]) / F
     s = p.read_text()
     if "SpaceTimeAttention" in s:

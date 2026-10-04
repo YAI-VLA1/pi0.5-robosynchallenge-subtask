@@ -74,3 +74,48 @@ python3 mem/apply_mem.py <repo>/policy/pi05
 - 학습 데이터 로더에서 과거 프레임 샘플링 (LeRobot `delta_timestamps` + `_is_pad`)
 - 추론 프레임 버퍼 (에피소드 경계 초기화, 과거 부족 시 invalid 표시)
 - 히스토리 드롭아웃 (논문 0.3)
+
+## 학습 경로 배선 (데이터 -> 모델)
+
+| 파일 | 패치 | 내용 |
+|---|---|---|
+| `data_loader.py` | `apply_mem_data.py` | `delta_timestamps` 로 과거 프레임 + `_is_pad` |
+| `config.py` / `libero_policy.py` | `apply_mem_wire2.py` | repack 이 `_is_pad` 통과, `frame_valid` 생성 |
+| `model.py` | `apply_mem_obs.py` | `Observation.frame_valid`, `from_dict` 전달, 타입 주석 분리 |
+| `pi0.py` / `pi0_config.py` | `apply_mem_numframes.py` | 비전 모듈에 `num_frames`, fake_obs 모양 |
+| `image_tools.py` | `apply_mem_resize.py` | `resize_with_pad` 를 임의 선행 차원으로 |
+| `model.py` | `apply_mem_aug.py` | 증강을 프레임 공통으로 (§9) |
+| `model.py` | `apply_mem_crop.py` | `RandomCrop` 치수를 뒤에서 세도록 |
+
+전부 `PI05_MEM_FRAMES=1`(기본)에서 기존과 동일하게 동작한다.
+
+### 1스텝 실행에서 잡은 버그 6개
+
+shape 출력만 봐서는 안 드러나고, 실제로 forward/backward 를 돌려야 나온 것들이다.
+
+| 버그 | 증상 |
+|---|---|
+| `x_2d` reshape 가 과거 토큰 폐기 전 배치 사용 | 채널 1152 -> 384 |
+| `from_dict` 가 `frame_valid` 누락 | 패딩을 진짜 과거로 착각 |
+| `Observation` 타입 주석 충돌 | `*b` 가 `(4,6)` vs `(4,)` |
+| `resize_with_pad` 가 5차원 미지원 | 차원을 하나 더 붙임 |
+| `augmax` 증강이 프레임마다 독립 | 같은 patch 의 시간 대응 훼손 |
+| **`RandomCrop` 이 `(T,H)` 를 `(H,W)` 로** | **cam_high 만 5px 로 뭉개짐, 예외 없음** |
+
+마지막 둘은 예외가 안 나므로 학습을 한참 돌린 뒤에야 드러났을 것이다.
+
+### 데이터 로더 검증
+
+```
+이미지            (6, 3, 480, 640) -> 변환 후 (6, 224, 224, 3)
+에피소드 시작      is_pad [1,1,1,1,1,0]
+에피소드 중간      is_pad [0,0,0,0,0,0]
+현재와의 평균차    0.29 0.27 0.25 0.31 0.26 0.00   (같은 프레임 복제가 아니다)
+비전 파라미터      414,803,696  (MEM 적용 전과 동일)
+```
+
+### 아직 안 된 것
+
+- 추론 프레임 버퍼 (에피소드 경계 초기화, 과거 부족 시 invalid)
+- 히스토리 드롭아웃 (논문 0.3)
+- GPU 에서 T=6 학습 1스텝 / 비용 실측 — 롤아웃 수집이 GPU 를 쓰는 중이라 대기
