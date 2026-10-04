@@ -43,11 +43,19 @@ step "환경 확인"
 # 전부 멱등이고 --check 를 지원한다. 앵커가 안 맞으면 즉시 멈춘다
 # (업스트림이 바뀐 것이므로 조용히 넘어가면 안 된다).
 step "subtask 패치 적용"
+# ★ apply_loss_mask 는 bootstrap_subtask_env.sh 의 clone 블록 안에만 있었다.
+#   저장소가 이미 있는 경로로 재구축하면 통째로 빠지는데 **증상이 없다**.
+#   여기서 매번 부른다 (멱등). 2026-10-04 에 실제로 당했다.
+python3 "$REC/apply_loss_mask.py" "$R" || exit 1
 python3 "$SUB/apply_subtask_patch.py" "$R" || exit 1        # tokenizer/transform/policy/pi0/gemma
 # 순서 중요: subtask -> decode -> v2. 이 순서로만 검증했다 (2026-09-26).
 python3 "$SUB/apply_decode_patch.py" "$R" || exit 1         # 추론 디코드 (평가에 필요)
 python3 "$SUB/apply_subtask_v2.py" "$R" || exit 1           # Task 제거·EOS·정확도·분리로깅
 python3 "$SUB/prepare_subtask_config.py" "$PI05" "$SCHED" || exit 1   # 데이터 배선 + TrainConfig
+
+# 하드 체크. 하나라도 빠지면 학습을 띄우지 않는다.
+step "패치 검증"
+python3 "$REC/verify_patches.py" "$R" --subtask || exit 1
 
 # ── 3. norm_stats 를 새 config 자산 경로로 ──────────────────────────────
 NS_OLD=$PI05/assets/$BASE_CONFIG/RoboSynChallenge

@@ -150,14 +150,11 @@ TR_D = '''        # {mark}: subtask 가 있으면 슬롯을 끼우고 그 자리
 # 4. libero_policy.py — subtask 를 통과시킨다 (여기서 dict 를 새로 만든다)
 # ═════════════════════════════════════════════════════════════════════════
 POL = "policy/pi05/src/openpi/policies/libero_policy.py"
-POL_A = '''        if "prompt" in data:
-            inputs["prompt"] = data["prompt"]
-
-        return inputs'''
-POL_B = '''        if "prompt" in data:
-            inputs["prompt"] = data["prompt"]
-
-        # {mark}: 이 dict 는 새로 만들어지므로 명시하지 않으면 subtask 가 사라진다.
+# 앵커는 `return inputs` 하나다. 예전에는 위의 prompt 블록까지 묶었는데,
+# 다른 패치(RSC_MISTAKE)가 그 사이에 줄을 끼우면 앵커가 깨져 적용 순서에
+# 종속됐다. 좁은 앵커 + EmbodiChainInputs 스코프면 순서와 무관하다. (2026-10-04)
+POL_A = '''        return inputs'''
+POL_B = '''        # {mark}: 이 dict 는 새로 만들어지므로 명시하지 않으면 subtask 가 사라진다.
         if "subtask" in data:
             inputs["subtask"] = data["subtask"]
 

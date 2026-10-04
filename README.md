@@ -1,4 +1,21 @@
-# pi0.5 subtask conditioning — RoboSynChallenge
+# pi0.5 post-training — RoboSynChallenge `items_handover`
+
+pi0.5 fine-tuning 성공률이 1/100 인 데서 출발해, 올릴 수 있는 축 세 개를 붙였다.
+셋은 서로 독립이고 환경변수로 켜고 끈다.
+
+| | 무엇 | 문서 |
+|---|---|---|
+| **subtask** | 모델이 하위 지시문을 스스로 생성하고 거기 맞춰 action 을 뽑는다 | 이 문서 |
+| **mistake** | 실패 궤적에 pi0.7 식 `Mistake: true/false` 를 붙여 조건화한다 | [`mistake/README.md`](mistake/README.md) |
+| **MEM** | SigLIP 에 space-time 분리 어텐션 (새 파라미터 0개) | [`mem/README.md`](mem/README.md) |
+
+> **다른 머신에서 돌리려면 → [`SETUP.md`](SETUP.md)**
+> 빈 머신에서 학습까지 복붙으로 가는 안내. GPU 별 배치 가이드와 함정 모음 포함.
+> 학습 띄우기 전에 `python3 patches/verify_patches.py <repo> --all` 을 **반드시** 통과시킬 것.
+
+---
+
+## subtask — 왜 이걸 먼저 했나
 
 items_handover 에서 pi0.5 가 **subtask 지시문을 스스로 생성하고 거기에 맞춰 action 을 뽑도록**
 만드는 작업. 데이터셋에 subtask 주석이 없다는 문제에서 출발한다.

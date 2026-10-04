@@ -1,0 +1,191 @@
+diff --git a/.gitignore b/.gitignore
+index da35b01..488cf45 100755
+--- a/.gitignore
++++ b/.gitignore
+@@ -217,3 +217,6 @@ eval_result/
+ 
+ **/results/
+ .codex
++
++
++personal_materials/
+\ No newline at end of file
+diff --git a/policy/pi05/deploy_policy.py b/policy/pi05/deploy_policy.py
+index 895256f..7cced98 100644
+--- a/policy/pi05/deploy_policy.py
++++ b/policy/pi05/deploy_policy.py
+@@ -36,6 +36,16 @@ def _format_env_action(action, env):
+     return action_tensor.unsqueeze(0)
+ 
+ 
++def _as_done(value):
++    """truncated/terminated 는 환경 래퍼에 따라 bool, np.ndarray, torch.Tensor 로 온다.
++    eval_policy.RecordingEnvProxy._as_done 과 같은 방식으로 관용적으로 처리한다."""
++    if isinstance(value, torch.Tensor):
++        return bool(value.any().item())
++    if isinstance(value, np.ndarray):
++        return bool(value.any())
++    return bool(value)
++
++
+ def encode_obs(obs):
+     """Convert gym Gymnasium Dict observation to π₀ input format.
+ 
+@@ -127,7 +137,7 @@ def eval(env, model, obs):
+ 
+         if env.get_wrapper_attr("is_task_success")():
+             break
+-        if truncated.any():
++        if _as_done(truncated):
+             break
+ 
+         # Update observation window after each step
+diff --git a/policy/pi05/pi_model.py b/policy/pi05/pi_model.py
+index 53aaf63..fd649d2 100755
+--- a/policy/pi05/pi_model.py
++++ b/policy/pi05/pi_model.py
+@@ -26,25 +26,27 @@ import os
+ 
+ class PI0:
+ 
+-    def __init__(self, train_config_name, model_name, checkpoint_id, pi0_step):
++    def __init__(self, train_config_name, model_name, checkpoint_id, pi0_step,
++                 pytorch_device="cuda"):
+         self.train_config_name = train_config_name
+         self.model_name = model_name
+         self.checkpoint_id = checkpoint_id
+ 
+-        specified_path = f"policy/pi05/checkpoints/{self.train_config_name}/{self.model_name}/{self.checkpoint_id}/assets/"
+-        entries = os.listdir(specified_path)
+-        assets_id = entries[0]
+-
+         config = _config.get_config(self.train_config_name)
++        # norm stats are resolved from the checkpoint's assets/<asset_id>/ by
++        # create_trained_policy itself (asset_id defaults to the training repo_id).
++        # The old `robotwin_repo_id=` kwarg is a RoboTwin leftover and no longer exists.
+         self.policy = _policy_config.create_trained_policy(
+             config,
+             f"policy/pi05/checkpoints/{self.train_config_name}/{self.model_name}/{self.checkpoint_id}",
+-            robotwin_repo_id=assets_id,
+             )
+         print("loading model success!")
+         self.img_size = (224, 224)
+         self.observation_window = None
+         self.pi0_step = pi0_step
++        # deploy_policy.eval() reads this for start/finish_inference timing
++        # (torch.cuda.synchronize when it starts with "cuda"). Inference itself is JAX.
++        self.pytorch_device = pytorch_device
+ 
+     # set img_size
+     def set_img_size(self, img_size):
+@@ -67,13 +69,17 @@ class PI0:
+         img_right = np.transpose(img_right, (2, 0, 1))
+         img_left = np.transpose(img_left, (2, 0, 1))
+ 
++        # Keys must match what EmbodiChainInputs (openpi/policies/libero_policy.py)
++        # reads. During training a RepackTransform produced these from the raw
++        # dataset columns (cam_high.color -> observation/image, observation.qpos ->
++        # observation/state, ...); create_trained_policy applies no repack at
++        # inference time, so we have to emit the post-repack names directly.
++        # The old {"state", "images": {"cam_high": ...}} shape is a RoboTwin leftover.
+         self.observation_window = {
+-            "state": state,
+-            "images": {
+-                "cam_high": img_front,
+-                "cam_left_wrist": img_left,
+-                "cam_right_wrist": img_right,
+-            },
++            "observation/image": img_front,
++            "observation/left_wrist_image": img_left,
++            "observation/right_wrist_image": img_right,
++            "observation/state": state,
+             "prompt": self.instruction,
+         }
+ 
+diff --git a/policy/pi05/pyproject.toml b/policy/pi05/pyproject.toml
+index 4124b1f..65ea178 100755
+--- a/policy/pi05/pyproject.toml
++++ b/policy/pi05/pyproject.toml
+@@ -37,7 +37,7 @@ dependencies = [
+     "transformers==4.53.2",
+     "rich>=14.0.0",
+     "polars>=1.30.0",
+-    "dexsim-engine==0.4.1",
++    "dexsim-engine==0.4.3",
+     "embodichain",
+     "robosynchallenge",
+ ]
+diff --git a/policy/pi05/src/openpi/training/config.py b/policy/pi05/src/openpi/training/config.py
+index af4ec51..98111c0 100755
+--- a/policy/pi05/src/openpi/training/config.py
++++ b/policy/pi05/src/openpi/training/config.py
+@@ -865,6 +865,41 @@ _CONFIGS = [
+         batch_size=64,
+         fsdp_devices=1,
+     ),
++    # --- added: LoRA low-memory config for RoboSynChallenge (fits 3 x RTX 3090) ---
++    TrainConfig(
++        name="pi05_robosyn_click_bell_lora",
++        model=pi0_config.Pi0Config(
++            pi05=True,
++            action_horizon=50,
++            paligemma_variant="gemma_2b_lora",
++            action_expert_variant="gemma_300m_lora",
++        ),
++        data=LeRobotEmbodiChainDataConfig(
++            repo_id="RoboSynChallenge/cobotmagic_Sim_click_bell",
++            base_config=DataConfig(prompt_from_task=True),
++            extra_delta_transform=True,
++        ),
++        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
++        freeze_filter=pi0_config.Pi0Config(
++            pi05=True,
++            action_horizon=50,
++            paligemma_variant="gemma_2b_lora",
++            action_expert_variant="gemma_300m_lora",
++        ).get_freeze_filter(),
++        ema_decay=None,          # LoRA: EMA off
++        num_train_steps=20_000,  # full run: ~1.7 s/it on one 3090 => ~9.5 h
++        # Single GPU on purpose: these 3090s have no NVLink, so FSDP across them
++        # spent ~40s/step just all-gathering the 12.4GB params over PCIe (~3.5GB/s,
++        # sm 100% but mem-util 2% = waiting, not computing). One device = no comms.
++        batch_size=4,
++        fsdp_devices=1,
++        wandb_enabled=False,
++        save_interval=5_000,
++        # Pin every saved step so the mid-training checkpoints survive long enough to
++        # be evaluated (max_to_keep=1 would delete each one as the next is written).
++        # 4 kept checkpoints x ~9 GB = ~36 GB; older ones get removed once evaluated.
++        keep_period=5_000,
++    ),
+     TrainConfig(
+         name="pi05_libero",
+         model=pi0_config.Pi0Config(pi05=True, action_horizon=10, discrete_state_input=False),
+diff --git a/scripts/eval_policy.py b/scripts/eval_policy.py
+index d7021f1..b7c6f04 100755
+--- a/scripts/eval_policy.py
++++ b/scripts/eval_policy.py
+@@ -668,7 +668,12 @@ def main():
+     finally:
+         if video_recorder:
+             video_recorder.close_episode(success=False)
+-        env.close()
++        # NOTE: env.close() is deliberately NOT called here.
++        # EmbodiChain's sim_manager.destroy() ends with os._exit(0), which kills the
++        # process on the spot. Calling it in this finally block meant that (a) the
++        # metrics json and the summary below were never written, and (b) any exception
++        # raised during a rollout was destroyed before Python could print its traceback.
++        # The close now happens at the very end of main(), after results are saved.
+ 
+     inference_call_count = len(all_inference_times)
+     average_action_steps = float(np.mean(action_steps))
+@@ -739,6 +744,9 @@ def main():
+     print(f"  Metrics saved to: {result_path}")
+     print(f"{'='*50}")
+ 
++    # Results are on disk now, so it is safe to let the simulator hard-exit the process.
++    env.close()
++
+ 
+ if __name__ == "__main__":
+     main()
