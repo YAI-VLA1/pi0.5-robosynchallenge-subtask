@@ -13,16 +13,22 @@ for s in apply_mem.py \
          apply_mem_resize.py \
          apply_mem_aug.py \
          apply_mem_crop.py \
-         apply_mem_dropout.py; do
+         apply_mem_dropout.py \
+         apply_mem_trainlog.py; do
   echo "── $s"
   python3 "$D/$s" "$PI05"
 done
 
-# 추론 경로(deploy_policy.py / pi_model.py)는 저장소 루트 기준이다. 평가할 때만 필요하다.
+# 추론 경로(deploy_policy.py / pi_model.py). 평가할 때만 필요하다.
+# 모든 MEM 패치의 인자는 **PI05 루트** 하나로 통일했다 (리뷰 R7).
 if [ -f "$PI05/deploy_policy.py" ]; then
   echo "── apply_mem_infer.py (추론 프레임 버퍼)"
-  python3 "$D/apply_mem_infer.py"  "$PI05"
-  python3 "$D/apply_mem_obswin.py" "$PI05"
+  python3 "$D/apply_mem_infer.py"      "$PI05"
+  python3 "$D/apply_mem_obswin.py"     "$PI05"
+  python3 "$D/apply_mem_steptime.py"   "$PI05"   # 버퍼 시간축 = env step (리뷰 R9)
+  python3 "$D/apply_mem_infer_fix.py"  "$PI05"   # 4D transpose · frame_valid 통과 (리뷰 R8)
+else
+  echo "── deploy_policy.py 없음 — 추론 패치 건너뜀 (학습만 할 때는 정상)"
 fi
 
 echo "MEM-APPLY-ALL-DONE"

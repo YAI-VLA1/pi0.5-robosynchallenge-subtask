@@ -39,19 +39,25 @@ export REC=~/rsc
 sudo apt-get update && sudo apt-get install -y ffmpeg build-essential pkg-config
 curl -LsSf https://astral.sh/uv/install.sh | sh      # uv
 
-# 2) 전체 세팅 (저장소 + venv + 데이터 + norm_stats + 패치 전부)
+# 2) 기존 체크포인트 받기 (권장 — norm_stats 가 같이 온다)
 export WS=$HOME/rsc_ws                # 작업 루트. 원하는 데로.
-export HF_TOKEN=hf_...                # 데이터/체크포인트 접근용
-bash $REC/setup/setup_train.sh        # 약 25분 (데이터 12분 + venv 6분 + norm_stats 2분)
+export HF_TOKEN=hf_...
+python3 $REC/fetch_subtask_ckpt.py \
+  yai-robosync/pi05-items-handover-subtask-cos82k  $WS/ckpt
 
-# 3) 패치가 전부 들어갔는지 하드 체크 — 반드시 통과시킬 것
-python3 $REC/patches/verify_patches.py $WS/RoboSynChallenge --all
+# 3) 전체 세팅 (저장소 + venv + 데이터 + 패치 + norm_stats + 검증)
+NORM_FROM_CKPT=$WS/ckpt/81999 bash $REC/setup/setup_train.sh --all   # 약 20분
 
-# 4) 학습
+# 4) 학습 — 기존 체크포인트에서 가중치만 받아 12k 더
+python3 $REC/mistake/prepare_posttrain_config.py $WS/RoboSynChallenge/policy/pi05 \
+  pi05_robosyn_items_handover_subtask_mistake_cos82k  $WS/ckpt/81999  12000
+CONFIG=pi05_robosyn_items_handover_subtask_mistake_cos82k_post12k \
+PI05_SUBTASK_W=1.0 PI05_MISTAKE=1 PI05_MEM_FRAMES=6 \
 bash $REC/setup/train.sh
 ```
 
-`setup_train.sh` 는 멱등하다. 중간에 끊겨도 다시 돌리면 된다.
+`setup_train.sh` 는 멱등하다. 중간에 끊겨도 다시 돌리면 된다. 마지막에
+패치 검증(문자열)과 **config 로드 검증**(실제 import + norm_stats 확인)을 둘 다 돌린다.
 
 ---
 
@@ -106,33 +112,57 @@ find $DATA/data -name '*.parquet' | wc -l     # 1000
 find $DATA/videos -name '*.mp4'   | wc -l     # 3000
 ```
 
-### 3.4 학습 설정 + norm_stats
+### 3.4 norm_stats
 
-```bash
-python3 $REC/setup/prepare_handover.py $PI05        # TrainConfig 2개 삽입
-cd $PI05 && HF_LEROBOT_HOME=$PI05/training_data \
-  .venv/bin/python scripts/compute_norm_stats.py \
-  --config-name pi05_robosyn_items_handover_lora_cos82k --fast-fix
-```
+**세 가지 방법이 있고, 첫 번째를 권한다.**
 
-`--fast-fix` 는 parquet 에서 state/action 만 읽는다 (2분). 일반 경로는 영상까지
-디코딩해서 **3시간 18분** 걸린다.
+1. **기존 체크포인트에서 가져오기 (권장, 즉시)**
+   체크포인트에는 그것이 학습에 쓴 통계가 `assets/` 에 동봉돼 있다. 이어서
+   학습할 거라면 **그 통계를 그대로 써야** 입력 분포가 비트 단위로 보존된다.
+   ```bash
+   NORM_FROM_CKPT=$WS/ckpt/81999 bash $REC/setup/setup_train.sh --all
+   ```
+
+2. **새로 계산 (느리다)**
+   ```bash
+   cd $PI05 && HF_LEROBOT_HOME=$PI05/training_data \
+     .venv/bin/python scripts/compute_norm_stats.py \
+     --config-name pi05_robosyn_items_handover_lora_cos82k
+   ```
+   영상까지 디코딩해서 **몇 시간** 걸린다. `setup_train.sh` 는
+   `CONFIRM_SLOW_NORM=1` 없이는 이 경로로 가지 않는다.
+
+> 이전 판 문서에 있던 `--fast-fix` 플래그는 **upstream 에 존재하지 않는다.**
+> 라이브 머신에만 있던 수정이 버전 관리에 안 들어간 것으로, 새 머신에서는
+> 그대로 실패한다. 플래그를 지웠다. (리뷰 R5)
+
+`setup_train.sh` 는 **선택한 config 전부**의 assets 경로에 통계를 놓는다.
+예전에는 baseline 에만 만들어서 subtask/mistake config 로 데이터로더를 만들면
+통계를 못 찾았다 (리뷰 R6). mistake config 는 `AssetsConfig(asset_id=...)` 로
+데모 데이터셋 이름을 고정해, 병합(`_mix`) 데이터셋을 써도 같은 통계를 읽는다.
 
 ### 3.5 소스 패치 — **순서가 중요하다**
 
 ```bash
-R=$WS/RoboSynChallenge
-python3 $REC/patches/apply_loss_mask.py      $R   # ① 항상
-python3 $REC/subtask/apply_subtask_patch.py  $R   # ② subtask 쓸 때
-python3 $REC/subtask/apply_decode_patch.py   $R   # ③
-python3 $REC/subtask/apply_subtask_v2.py     $R   # ④
-python3 $REC/subtask/prepare_subtask_config.py $PI05 $REC/schedule/schedule_sim.json
-python3 $REC/mistake/apply_mistake.py        $PI05 # ⑤ mistake 쓸 때
-bash    $REC/mem/apply_all.sh                $PI05 # ⑥ MEM 쓸 때
+bash $REC/setup/apply_patches.sh $WS/RoboSynChallenge --all
 ```
 
-②③④ 는 이 순서로만 검증했다. ①⑤⑥ 는 서로 독립이고 순서 무관이다.
-전부 **멱등**이고 `--check` 를 지원한다 (⑥ 제외).
+**순서를 직접 쓰지 말고 이 스크립트를 쓸 것.** 패치끼리 앵커 의존이 있고,
+순서를 틀리면 **앞쪽 파일만 바뀐 부분 적용 상태**로 멈춘다. 실제 의존 관계:
+
+```
+prepare_repo         cos40k TrainConfig    -> prepare_handover 의 삽입 기준점
+prepare_handover     state_key/image_key_* -> MEM wire2 의 앵커
+apply_loss_mask      (독립)
+subtask 3종          tokenizer/transforms/policy/pi0/gemma/config
+prepare_subtask      repack 에 frame_index -> apply_mistake 의 앵커
+apply_mistake        repack 에 episode_index + 프롬프트 Mistake 필드
+MEM                  wire2 가 repack 에 *_is_pad
+prepare_mistake      병합 데이터셋 TrainConfig (데이터셋이 있어야 한다)
+```
+
+예전 `setup_train.sh` 는 mistake 를 `prepare_subtask_config` **앞에** 돌려서
+`frame_index` 앵커 0개로 멈췄다 (리뷰 R3). 전부 **멱등**이고 대부분 `--check` 를 지원한다.
 
 | 패치 | 하는 일 | 없으면 생기는 일 |
 |---|---|---|
@@ -276,15 +306,35 @@ export PI05_SUBTASK_W=1.0 PI05_MISTAKE=1 PI05_MEM_FRAMES=6
 ### 5.4 처음부터 vs 기존 체크포인트에서 이어붙이기
 
 82k 를 처음부터 돌리면 3090 기준 **33시간**이다. 이미 학습된 81999 체크포인트가
-HF 에 있으니, 거기서 10~15k 스텝만 붙이는 쪽이 훨씬 싸다:
+HF 에 있으니 거기서 10~15k 만 붙이는 쪽이 훨씬 싸다. MEM 은 파라미터를 0개
+추가하고 `T=1` 에서 항등이라 **기존 체크포인트가 유효한 출발점**이고,
+mistake 도 드롭아웃 5% 경로가 기존 프롬프트와 바이트 단위로 같다.
+
+**`--resume` 으로는 안 된다.** 두 가지 이유가 있다 (리뷰 R11):
+
+- 모든 config 의 `weight_loader` 가 `pi05_base` 를 가리킨다. 새 experiment 로
+  띄우면 81999 가 아니라 **base 에서 시작한다.** 체크포인트 파일을 받아 두는
+  것만으로는 아무 효과가 없다.
+- 완료된 82k 체크포인트를 같은 config 로 `--resume` 하면 `train_state.step` 이
+  이미 82000 이라 `range(start_step, num_train_steps)` 가 비고 **한 스텝도 안 돈다.**
+  (저장 전에 step 이 1 증가해서 디렉터리 이름 81999 와 state.step 82000 이 어긋난다.)
+
+그래서 **별도 posttrain config** 를 만든다. 가중치만 가져오고 optimizer·step 은
+새로 초기화하며, 짧은 warmup/decay 를 새로 건다. 통계는 그 체크포인트가 쓰던
+것을 `AssetsConfig(assets_dir=<ckpt>/assets)` 로 그대로 가리킨다.
 
 ```bash
 python3 $REC/fetch_subtask_ckpt.py \
-  yai-robosync/pi05-items-handover-subtask-cos82k  $CKPT_DIR
+  yai-robosync/pi05-items-handover-subtask-cos82k  $WS/ckpt
+
+python3 $REC/mistake/prepare_posttrain_config.py $PI05 \
+  pi05_robosyn_items_handover_subtask_mistake_cos82k  $WS/ckpt/81999  12000
+# -> pi05_robosyn_items_handover_subtask_mistake_cos82k_post12k
+#    weight_loader = <ckpt>/81999/params, 12k steps, warmup 600, 1e-5 -> 1e-6
 ```
 
-MEM 은 파라미터를 0개 추가하고 `T=1` 에서 항등이라 **기존 체크포인트가 유효한
-출발점**이다. mistake 도 드롭아웃 5% 경로가 기존 프롬프트와 같다.
+`--resume` 은 **같은 실험의 장애 복구에만** 쓴다. 새 데이터·새 설정은 언제나
+weights-only warm start 다.
 
 사용 가능한 체크포인트:
 
@@ -298,14 +348,35 @@ MEM 은 파라미터를 0개 추가하고 `T=1` 에서 항등이라 **기존 체
 
 ## 6. GPU 별 배치 가이드
 
-RTX 3090 24GB 실측. 더 큰 GPU 는 외삽이다 — 돌려 보고 §7 로 직접 재는 쪽을 권한다.
+> **이 숫자로 production batch 상한을 정하지 말 것.** (리뷰 R12)
+> 아래는 `tests/mem_speed.py` 벤치마크 하니스의 값이다. 실제 `train.py` 와
+> **다른 점이 있다**: 체크포인트를 전부 bf16 으로 복원하고(실제는 모델 초기화의
+> param dtype 에 맞춰 병합하고 frozen 만 bf16), optimizer 도 config 의 것이 아니라
+> `optax.adamw(1e-5)` 를 쓴다(clipping·b2 가 다르다). 경향 파악용으로만 보고,
+> 상한은 §7 처럼 **실제 train.py** 로 재는 것이 맞다.
 
-<!-- SWEEP_TABLE -->
+RTX 3090 24GB, batch 는 global batch (gradient accumulation 구현 없음):
 
-**배치를 키울 때 러닝레이트도 같이 봐야 한다.** 위 config 들은 batch 4 기준으로
-코사인 스케줄이 짜여 있다. batch 를 N 배로 키우면 스텝 수를 N 분의 1로 줄이고
-(`num_train_steps`, `decay_steps` 둘 다) peak lr 을 √N 배 정도로 올리는 것이
-무난하다. `TrainConfig` 를 복사해 새 이름으로 등록할 것.
+| T | batch | 스텝 시간 | 활성화 메모리 | 82k 환산 | |
+|---|---|---|---|---|---|
+| 1 | 4 | 1,442 ms | 10.77 GiB | 32.8 h | OK |
+| 1 | 8 | 2,623 ms | 11.52 GiB | 59.7 h | OK |
+| 1 | 16 | — | 14.81 GiB | — | OOM |
+| 6 | 1 | — | 10.88 GiB | — | OOM (단편화) |
+| 6 | 2 | 1,314 ms | 11.24 GiB | 29.9 h | OK |
+| 6 | 4 | — | 11.88 GiB | — | OOM |
+
+활성화 메모리에 파라미터(bf16 3.4B ≈ 6.8 GiB)와 AdamW 모멘트(trainable 467M ×
+2 × 4B ≈ 3.7 GiB)를 더한 값이 실제 점유량이다. 24 GiB 에서 11~12 GiB 활성화는
+경계선이고, `T=6 batch=1` 이 OOM 나고 `batch=2` 가 통과한 것이 단편화의 증거다.
+**80 GB 로 가면 이 경계가 통째로 사라진다** — 거기서는 §7 로 2→4→8→16 을 직접
+재고 정하는 것이 맞다.
+
+**배치를 키울 때 러닝레이트.** 위 config 들은 batch 4 기준으로 코사인 스케줄이
+짜여 있다. 먼저 **기존 LR 그대로** 짧게 돌려 비교하는 편이 해석이 쉽다 — √N 배를
+자동으로 올리면 배치 효과와 LR 효과가 섞인다. 그리고 **다른 batch 에서 같은
+step 의 loss 를 비교하는 것은 같은 데이터 노출량을 비교한 것이 아니다.**
+처리한 sample 수와 update 수를 함께 적어 둘 것.
 
 ---
 
@@ -331,7 +402,11 @@ env PYTHONPATH=src HF_LEROBOT_HOME=$PI05/training_data \
 
 | 스크립트 | 보는 것 |
 |---|---|
-| `patches/verify_patches.py --all` | 패치가 전부 들어갔나 (**필수**) |
+| `patches/verify_patches.py --all` | 패치가 전부 들어갔나 (문자열 검사) |
+| `patches/verify_configs.py <config>...` | config 가 실제로 **로드되고** norm_stats 를 읽나 (**필수**) |
+| `tests/decode_eos_test.py` | EOS 뒤가 pad 로 채워지나 |
+| `tests/mem_infer_path_test.py` | 추론 이미지 shape · frame_valid 통과 |
+| `tests/mem_buffer_evalorder_test.py` | **실제 평가 호출 순서**에서 버퍼 간격이 맞나 |
 | `tests/mem_equiv.py` | `T=1` 이 기존과 비트 단위로 같은가 |
 | `tests/mem_t_tests.py` | causal · padding 무영향 · 과거→현재 전달 |
 | `tests/mem_t_f64.py` | float32 누적오차인지 논리 오류인지 가름 |
@@ -344,6 +419,15 @@ env PYTHONPATH=src HF_LEROBOT_HOME=$PI05/training_data \
 **shape 가 맞는 것과 학습이 도는 것은 다르다.** MEM 구현에서 예외 없이 조용히
 망가지는 버그가 6개 나왔고(그중 하나는 `cam_high` 를 212×5 로 뭉갰다),
 전부 `mem_train_step.py` 를 실제로 돌려서야 잡혔다.
+
+**그리고 문자열 검사는 기능 검사가 아니다.** `verify_patches.py --all` 이 OK 를
+내는데도 `config.py` 가 import 조차 안 되는 상태였던 적이 있다 (`DataConfig` 에
+없는 필드를 넣었다). 그래서 `verify_configs.py` 를 따로 둔다 — 실제로 import 하고
+`DataConfig` 를 만들어 `norm_stats` 가 **읽혔는지**까지 본다.
+
+**아직 자동화되지 않은 것:** 실제 `train.py` 2-step smoke, 100-step steady-state
+GPU 측정, save→resume→추론 로딩 왕복. 유료 장시간 학습 전에 이 셋을 손으로라도
+돌릴 것.
 
 ---
 
@@ -387,3 +471,76 @@ env PYTHONPATH=src HF_LEROBOT_HOME=$PI05/training_data \
 
 11. **복구 스크립트에 "조용히 넘어가는 경로"를 하나도 두지 말 것.** 복구는 평소에
     실행되지 않아 검증이 안 된다. 실패하면 반드시 종료 코드 1 로 멈출 것.
+    테스트도 마찬가지다 — FAIL 을 찍고 `exit 0` 으로 끝나면 자동 게이트가 안 된다.
+
+12. **`set -euo pipefail` 아래에서 없는 디렉터리에 `find` 를 걸지 말 것.**
+    `N=$(find /없는/경로 -name '*.x' | wc -l)` 는 `wc` 가 0 을 찍어도 `find` 의
+    실패가 `pipefail` 에 걸려 **셸이 그 자리에서 죽는다.** stderr 까지 버리면
+    이유도 안 보인다. 디렉터리 존재를 먼저 확인할 것 (`count_files()` 참고).
+
+13. **f-string 패치 템플릿에서 중괄호는 두 배로.** `}}` 는 `}` 하나가 된다.
+    dict 두 개를 닫는 자리를 한 개로 줄여 괄호가 안 맞는 파일을 만든 적이 있다.
+
+14. **녹화기는 `step()` 이 돌려준 obs 를 쓰면 안 된다.** 그건 실행 **후** 관측이라
+    `(o_{t+1}, a_t)` 가 저장된다. BC 는 `(o_t, a_t)` 가 필요하다. step 직전 관측을
+    따로 들고 있다가 짝지을 것. 환경이 버퍼를 재사용할 수 있으니 복사해서 보관한다.
+    **검증 방법:** `(action-state)` 와 `(다음 state-state)` 의 코사인을 본다.
+    올바르면 데모와 비슷한 +0.9 대가 나온다. `|action-state|` 크기만 비교하면
+    컨트롤러 추종 지연에 가려져 판별이 안 된다.
+
+---
+
+## 10. 외부 코드 리뷰 반영 (2026-10-04)
+
+Runpod 이전 전에 받은 리뷰에서 지적된 것들. **확인한 항목은 전부 재현됐다.**
+
+| | 문제 | 상태 |
+|---|---|---|
+| R1 | 녹화가 `(o_{t+1}, a_t)` 를 저장 — 한 스텝 어긋남 | 고침 + 기존 데이터 복구 |
+| R2 | subtask EOS 뒤 임의 토큰이 action 조건에 들어감 | 고침 + 테스트 |
+| R3 | 자동 setup 의 패치 순서가 의존성과 반대 | `apply_patches.sh` 로 통합 |
+| R4 | 없는 디렉터리에 `find` → `pipefail` 로 셸 종료 | `count_files()` |
+| R5 | `--fast-fix` 가 upstream 에 없음 | 제거, 체크포인트 통계 재사용 |
+| R6 | subtask/mistake config 의 norm_stats 미준비 | `AssetsConfig` + 전 config 배치 |
+| R7 | MEM 패치 8개가 경로를 무시, infer 는 루트 계약이 다름 | PI05 루트로 통일 |
+| R8 | 추론 4D transpose · `frame_valid` 유실 | 고침 + 테스트 |
+| R9 | 버퍼 시간이 env step 이 아니라 호출 횟수 | `mem_tick()` + 중복 제거 |
+| R10 | MEM 에서 train.py 첫 배치 이미지 로깅 실패 | 현재 프레임만 로깅 |
+| R11 | 81999 에서 이어 학습하는 경로 없음 | `prepare_posttrain_config.py` |
+| R12 | 벤치마크 dtype·optimizer 가 실제와 다름 | §6 에 경고 명시 |
+| R13 | 녹화 재시작이 사이드카를 덮어씀 | 기존 meta 읽고 atomic write |
+| R14 | 데이터셋 재생성해도 config 라벨이 안 바뀜 | marker 블록 교체 |
+
+### R1 복구 — 어떻게 확인했나
+
+처음에 `|action - state|` 크기로 판별하려 했는데 **컨트롤러 추종 지연에
+가려져 결론이 안 났다** (수정 후 오히려 커졌다). 방향으로 보면 명확하다:
+
+```
+(action - state) 와 (다음 state - state) 의 코사인 중앙값
+  대본 데모         +0.918      <- action 이 그 행의 state 에서 앞으로 가는 명령
+  롤아웃 (수정 전)   +0.370      <- 규약 불일치
+  롤아웃 (수정 후)   +0.800      <- 데모와 같아짐
+```
+
+복구는 `action` 열만 한 칸 당기고 마지막 행을 버린다
+(`rollout/fix_rollout_alignment.py`). 잃는 것은 `(o_0, a_0)` 한 쌍인데,
+`o_0`(리셋 직후)은 애초에 기록되지 않았다. 영상은 그대로 두고 parquet 만 줄인다.
+
+복구 후 `mistake_labels` 를 다시 돌리면 `t_fail` 중앙값이 86 → 85 로 한 프레임
+움직인다. 분류(A 92 / B 5 / C 2 / D 1)는 그대로다.
+
+### 아직 남은 설계 과제
+
+- **`_mix` 의 subtask 라벨은 성공 데모의 고정 스케줄을 쓴다.** 실패한 grasp
+  뒤에도 시간상 `lift the pen` 같은 지시문이 붙는다. "시도 중인 동작"을
+  라벨링할지 "완료 상태/회복 단계"를 라벨링할지 먼저 정해야 한다.
+- **`mistake=true` 도 같은 방향의 positive flow-matching loss 를 받는다.**
+  이 플래그가 실패 action 을 배척하지도, 회복 action 을 가르치지도 않는다.
+  추론을 `false` 로 조건화하는 분리 학습 실험일 뿐이다. 복구 데이터가 없는
+  상태에서 회복 행동을 기대할 근거는 없다.
+- **첫 subtask 토큰 정확도는 phase 정확도가 아니다.** `move…` 처럼 여러 phase 가
+  첫 토큰을 공유한다. 전체 문장을 phase ID 로 매핑해 재야 한다.
+- **FAST action CE, Knowledge Insulation, bbox 의 VLA 입력 연결은 아직 없다.**
+  `detect/` 는 라벨 생성·탐지 평가 도구이고, box 를 학습 프롬프트나 모델에
+  넣는 경로가 아니다.

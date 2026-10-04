@@ -39,20 +39,28 @@ def main():
 
     cfg = pi05 / "src/openpi/training/config.py"
     s = cfg.read_text()
-    added = []
     for name, extra in ((NAME, ""),
                         (NAME_SUB,
                          f"\n            subtask_ends={SUBTASK_ENDS},"
                          f"\n            subtask_sentences={SUBTASK_SENTENCES},")):
-        if name in s:
-            print(f"  이미 있음: {name}")
-            continue
-        assert s.count(ANCHOR) == 1, f"앵커가 {s.count(ANCHOR)} 번 나온다"
-        s = s.replace(ANCHOR, block_for(name, lit, extra) + ANCHOR, 1)
-        added.append(name)
+        block = block_for(name, lit, extra)
+        b0, b1 = f"    # <{name}>\n", f"    # </{name}>\n"
+        block = b0 + block + b1
+        i = s.find(b0)
+        if i >= 0:
+            # 데이터셋을 다시 만들면 episode 번호와 t_mistake 가 바뀐다. 이름이
+            # 있다고 건너뛰면 **이전 라벨이 다른 에피소드에 붙는다** (리뷰 R14).
+            j = s.index(b1) + len(b1)
+            if s[i:j] == block:
+                print(f"  변경 없음: {name}")
+                continue
+            s = s[:i] + block + s[j:]
+            print(f"  갱신: {name} · mistake 에피소드 {len(pairs)}")
+        else:
+            assert s.count(ANCHOR) == 1, f"앵커가 {s.count(ANCHOR)} 번 나온다"
+            s = s.replace(ANCHOR, block + ANCHOR, 1)
+            print(f"  추가: {name} · mistake 에피소드 {len(pairs)}")
     cfg.write_text(s)
-    for n in added:
-        print(f"  {n} 추가 · mistake 에피소드 {len(pairs)}")
     print("MISTAKE-CONFIG-DONE")
 
 
@@ -71,6 +79,11 @@ def block_for(name, lit, extra):
         ),
         data=LeRobotEmbodiChainDataConfig(
             repo_id="RoboSynChallenge/cobotmagic_Sim_items_handover_mix",
+            # 정규화 통계는 데모 전용 데이터셋 것을 그대로 쓴다. 롤아웃이 4% 라
+            # 통계는 사실상 같고, 81999 가 본 입력 분포를 안 바꾸는 편이 재개에 안전하다.
+            # asset_id 를 고정하지 않으면 repo_id(_mix) 경로를 찾다가 통계를 못 읽는다.
+            # assets 는 DataConfig 가 아니라 DataConfigFactory 의 필드다.
+            assets=AssetsConfig(asset_id="RoboSynChallenge/cobotmagic_Sim_items_handover"),
             base_config=DataConfig(prompt_from_task=True),
             extra_delta_transform=True,
             image_key_high="observation.images.cam_high",

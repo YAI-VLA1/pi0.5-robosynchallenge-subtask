@@ -32,6 +32,7 @@ SUBTASK = [
     (f"{P}/models/tokenizer.py",          "RSC_SUBTASK_V2",            "Task 제거 · EOS"),
     ("policy/pi05/scripts/train.py",      "RSC_SUBTASK_V2",            "분리 로깅"),
     (f"{P}/training/config.py",           "RSC_DECODE",                "추론 디코드"),
+    (f"{P}/models/pi0.py",                "RSC_EOSFIX",                "EOS 뒤 pad (R2)"),
 ]
 MISTAKE = [
     (f"{P}/models/tokenizer.py",          "Mistake:",                  "프롬프트 필드"),
@@ -48,6 +49,16 @@ MEM = [
     (f"{P}/models/pi0.py",                "PI05_MEM_FRAMES",           "num_frames 배선"),
     (f"{P}/training/data_loader.py",      "PI05_MEM_FRAMES",           "delta_timestamps"),
     (f"{P}/shared/image_tools.py",        "lead",                      "5D resize"),
+    ("policy/pi05/scripts/train.py",      "RSC_MEMLOG",                "첫 배치 이미지 로깅 (R10)"),
+]
+# 추론 경로. 평가 스크립트가 있을 때만 검사한다.
+MEM_INFER = [
+    ("policy/pi05/deploy_policy.py",      "RSC_MEMSTEP",               "버퍼 시간축 = env step (R9)"),
+    ("policy/pi05/pi_model.py",           "RSC_MEMINFER",              "4D transpose (R8)"),
+    (f"{P}/policies/libero_policy.py",    "RSC_MEMINFER",              "추론 frame_valid 통과 (R8)"),
+]
+ROLLOUT = [
+    ("scripts/eval_policy.py",            "RSC_ALIGN",                 "녹화 (o_t, a_t) 정렬 (R1)"),
 ]
 
 
@@ -80,6 +91,11 @@ def main():
         groups.append(("mistake", MISTAKE))
     if "--mem" in sys.argv or "--all" in sys.argv:
         groups.append(("MEM", MEM))
+        if (root / "policy/pi05/deploy_policy.py").exists():
+            groups.append(("MEM 추론", MEM_INFER))
+    if (root / "scripts/eval_policy.py").exists() and (
+            "--rollout" in sys.argv or "--all" in sys.argv):
+        groups.append(("롤아웃 녹화", ROLLOUT))
     bad = run(root, groups)
     print()
     if bad:

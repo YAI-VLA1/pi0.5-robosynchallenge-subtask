@@ -62,10 +62,21 @@ class RolloutRecorder:
                 robot_type="cobotmagic", features=FEATURES,
                 use_videos=True, image_writer_threads=4)
             print(f"[rec] 새 데이터셋 생성 {self.root}", flush=True)
-        self.meta = []           # 에피소드별 사이드카
+        # 재시작 수집: 기존 사이드카를 읽고 번호를 데이터셋에 맞춘다.
+        # 빈 리스트로 시작하면 다음 end_episode 에서 rollout_meta.json 을
+        # 새 기록만으로 **덮어쓰고** episode 번호도 0 부터 다시 매긴다.
+        # 그러면 parquet 의 episode_index 와 seed/success 가 어긋나 이후
+        # mistake 라벨링이 엉뚱한 에피소드에 붙는다. (리뷰 R13)
+        side = self.root / "rollout_meta.json"
+        self.meta = json.loads(side.read_text()) if side.exists() else []
+        self._n = int(self.ds.num_episodes)
+        if self.meta and self.meta[-1]["episode"] + 1 != self._n:
+            print(f"[rec] ★ 사이드카({self.meta[-1]['episode'] + 1})와 "
+                  f"데이터셋({self._n}) 에피소드 수가 다르다 — 사이드카를 데이터셋에 맞춘다",
+                  flush=True)
+            self.meta = [m for m in self.meta if m["episode"] < self._n]
         self._cur = []
         self._probed = False
-        self._n = 0
 
     def record(self, obs, action):
         st  = _np(_first(obs, "robot/qpos"))
@@ -111,7 +122,11 @@ class RolloutRecorder:
         self.meta.append({"episode": self._n, "length": n,
                           "success": bool(success), "seed": int(seed),
                           "source": source, "mistake": (not success)})
-        (self.root / "rollout_meta.json").write_text(json.dumps(self.meta, indent=1))
+        # atomic write — 수집 중 파드가 죽어도 반쪽짜리 JSON 이 남지 않는다.
+        side = self.root / "rollout_meta.json"
+        tmp = side.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(self.meta, indent=1))
+        tmp.replace(side)
         print(f"[rec] ep{self._n} 저장 ({n} 프레임, {'성공' if success else '실패'})", flush=True)
         self._n += 1
         self._cur = []

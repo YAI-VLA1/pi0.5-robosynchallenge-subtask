@@ -58,3 +58,5 @@ print()
 for k, v in ok.items():
     print(f"  {'OK  ' if v else '✗   '}{k}")
 print("\nMEM-IMAGE-PATH " + ("ALL-OK" if all(ok.values()) else "FAIL"))
+if not all(ok.values()):
+    raise SystemExit(1)   # 자동 게이트용 종료 코드 (리뷰 지적)

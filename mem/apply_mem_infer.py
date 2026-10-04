@@ -16,7 +16,8 @@ PI05_MEM_FRAMES (기본 1 = 끔) · PI05_MEM_STRIDE_S (기본 1.0) · 25 fps 가
 """
 import pathlib, sys
 
-F = "policy/pi05/deploy_policy.py"
+# 경로 계약을 다른 MEM 패치와 맞춘다: 인자 = PI05 루트 (리뷰 R7)
+F = "deploy_policy.py"
 
 A_HEAD = "def encode_obs(obs):"
 N_HEAD = '''# ── MEM 추론 프레임 버퍼 ────────────────────────────────────────────

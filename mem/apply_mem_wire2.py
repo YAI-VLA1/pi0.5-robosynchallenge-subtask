@@ -1,5 +1,10 @@
 import pathlib, sys
-P = pathlib.Path("/workspace/rsc_ws/RoboSynChallenge/policy/pi05")
+# 경로 계약: 인자 1개 = <repo>/policy/pi05 (PI05 루트). 생략하면 VESSL 기본값.
+# 예전에는 이 값을 상수로 박아 둬서 다른 머신에서 apply_all.sh 가
+# 엉뚱한 checkout 을 고치거나 FileNotFoundError 를 냈다. (리뷰 R7)
+_PI05 = pathlib.Path(sys.argv[1] if len(sys.argv) > 1
+                     else "/workspace/rsc_ws/RoboSynChallenge/policy/pi05")
+P = _PI05
 
 # ① config.py 의 items_handover repack — _is_pad 를 통과시킨다
 c = P / "src/openpi/training/config.py"

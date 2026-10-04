@@ -65,7 +65,10 @@ def main():
     gn = float(jnp.sqrt(sum(jnp.sum(jnp.square(g)) for g in gl)))
     nan = any(bool(jnp.any(~jnp.isfinite(g))) for g in gl)
     print(f"grad norm {gn:.6f}  NaN/Inf: {nan}")
-    print("\nMEM-TRAIN-STEP " + ("OK" if (jnp.isfinite(loss) and not nan and gn > 0) else "FAIL"))
+    good = bool(jnp.isfinite(loss)) and not nan and gn > 0
+    print("\nMEM-TRAIN-STEP " + ("OK" if good else "FAIL"))
+    if not good:
+        raise SystemExit(1)   # 자동 게이트용 종료 코드 (리뷰 지적)
 
 
 if __name__ == "__main__":
