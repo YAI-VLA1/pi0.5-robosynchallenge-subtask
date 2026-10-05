@@ -8,12 +8,17 @@
   정책이 이미 펜 쪽으로 팔을 뻗고 있어서 팔 자세가 펜 위치를 알려준다. 순환이다.
   낮은 CE 가 grounding 을 증명하지 못한다.
 
-그래서 세 가지를 같이 본다
+세 가지를 같이 본다
   ① 예측 박스의 중심 오차 / IoU
-  ② **state-only 기준선** 대비 (태스크마다 데이터에서 다시 계산하는 절차다)
-  ③ **이미지 가림 ablation** — image_mask 를 끄고 오차가 거의 안 늘면 비전을 안 쓴 것
+  ② state-only 기준선 대비 (태스크마다 데이터에서 다시 계산하는 **절차**다)
+  ③ **이미지 가림 ablation** — 오차가 거의 안 늘면 비전을 안 쓴 것
 
-import 순서는 scripts/train.py 를 따른다.
+★ 평가 자체의 함정 두 개를 막는다 (외부 리뷰)
+  · 생성 메서드 이름이 틀리면 조용히 GT 를 그대로 채점해 **오차 0 / IoU 1** 이 나온다.
+    메서드가 없으면 멈춘다.
+  · 생성 전에 GT 슬롯을 **반드시 비운다**. 안 비우면 모델이 정답을 보고 베낀다.
+  · loc 이외 토큰을 낸 샘플을 버리면 실패가 많을수록 성적이 좋아 보인다.
+    **전체 GT 샘플을 분모**로 두고 invalid 비율을 따로 보고한다.
 """
 import dataclasses, os, sys
 import etils.epath as epath
@@ -24,12 +29,11 @@ import openpi.models.model as _model
 import openpi.training.config as _config
 import openpi.training.data_loader as _data_loader
 
-W, H, NBIN = 640, 480, 1024
-LOC0 = 256000
+W, H, NBIN, LOC0, PAD = 640, 480, 1024, 256000, 0
+BBOX_SLOT = 4
 
 
 def decode_box(ids):
-    """슬롯 4토큰 -> (x0,y0,x1,y1) px. loc 토큰이 아니면 None."""
     v = [int(x) - LOC0 for x in ids]
     if any(t < 0 or t >= NBIN for t in v):
         return None
@@ -47,55 +51,72 @@ def iou(a, b):
 
 
 def main():
-    sys.path.insert(0, "/root/rsc_recover")
-    cfg_name = os.environ["BBOX_EVAL_CFG"]
-    ckpt = os.environ["BBOX_EVAL_CKPT"]
-    nb = int(os.environ.get("BBOX_EVAL_BATCHES", "20"))
-    cfg = _config.get_config(cfg_name)
+    cfg = _config.get_config(os.environ["BBOX_EVAL_CFG"])
     cfg = dataclasses.replace(cfg, batch_size=int(os.environ.get("BBOX_EVAL_BATCH", "2")))
-
+    nb = int(os.environ.get("BBOX_EVAL_BATCHES", "20"))
     dl = _data_loader.create_data_loader(cfg, num_batches=nb, shuffle=True)
-    model = cfg.model.load(_model.restore_params(epath.Path(ckpt), dtype=jnp.bfloat16))
+    model = cfg.model.load(_model.restore_params(
+        epath.Path(os.environ["BBOX_EVAL_CKPT"]), dtype=jnp.bfloat16))
+
+    if not hasattr(model, "_rsc_generate_subtask"):
+        sys.exit("★ 모델에 _rsc_generate_subtask 가 없다 — 디코드 패치가 안 들어갔다. "
+                 "이름이 틀리면 조용히 GT 를 채점해 오차 0 이 나온다.")
 
     @nnx.jit
     def gen(model, obs):
-        return model.generate_subtask(obs) if hasattr(model, "generate_subtask") else obs
+        return model._rsc_generate_subtask(obs)
+
+    def blank(obs):
+        """{MARK}: 생성 전에 두 슬롯을 pad 로 비운다. 안 비우면 모델이 정답을 베낀다."""
+        tok = obs.tokenized_prompt
+        lm = obs.token_loss_mask.astype(bool)
+        return dataclasses.replace(obs, tokenized_prompt=jnp.where(lm, PAD, tok))
 
     res = {"full": [], "masked": []}
+    n_gt = n_invalid = {"full": 0, "masked": 0}
+    n_gt = {"full": 0, "masked": 0}; n_invalid = {"full": 0, "masked": 0}
     for i, (obs, act) in enumerate(dl):
         lm = np.asarray(obs.token_loss_mask)
         tp = np.asarray(obs.tokenized_prompt)
         for tag in ("full", "masked"):
-            o = obs
+            o = blank(obs)
             if tag == "masked":
                 o = dataclasses.replace(
-                    obs, image_masks={k: jnp.zeros_like(v) for k, v in obs.image_masks.items()})
-            out = gen(model, o)
-            got = np.asarray(out.tokenized_prompt)
+                    o, image_masks={k: jnp.zeros_like(v) for k, v in o.image_masks.items()})
+            got = np.asarray(gen(model, o).tokenized_prompt)
             for b in range(len(tp)):
-                idx = np.flatnonzero(lm[b])
-                if len(idx) < 4:
+                idx = np.flatnonzero(lm[b])[:BBOX_SLOT]
+                if len(idx) < BBOX_SLOT:
                     continue
-                gt = decode_box(tp[b][idx[:4]])
-                pr = decode_box(got[b][idx[:4]])
-                if gt is None or pr is None:
+                gt = decode_box(tp[b][idx])
+                if gt is None:          # 라벨이 없는 프레임 — 분모에서 뺀다
+                    continue
+                n_gt[tag] += 1
+                pr = decode_box(got[b][idx])
+                if pr is None:          # loc 이 아닌 토큰을 냈다 — 실패로 센다
+                    n_invalid[tag] += 1
                     continue
                 gc = ((gt[0]+gt[2])/2, (gt[1]+gt[3])/2)
                 pc = ((pr[0]+pr[2])/2, (pr[1]+pr[3])/2)
                 res[tag].append((np.hypot(pc[0]-gc[0], pc[1]-gc[1]), iou(gt, pr)))
 
-    print(f"{'':12}{'중심오차 중앙':>14}{'평균':>9}{'IoU 중앙':>10}{'IoU>0.5':>9}{'n':>7}")
+    print(f"{'':10}{'GT 샘플':>9}{'invalid':>9}{'중심오차 중앙':>14}{'IoU 중앙':>10}"
+          f"{'IoU>0.5 (전체 대비)':>20}")
+    med = {}
     for tag in ("full", "masked"):
-        a = np.array(res[tag])
-        if not len(a):
-            print(f"{tag:12}  (샘플 없음)"); continue
-        print(f"{tag:12}{np.median(a[:,0]):11.1f} px{a[:,0].mean():9.1f}"
-              f"{np.median(a[:,1]):10.3f}{np.mean(a[:,1]>0.5):9.1%}{len(a):7}")
-    if len(res["full"]) and len(res["masked"]):
-        f = np.median(np.array(res["full"])[:, 0]); m = np.median(np.array(res["masked"])[:, 0])
-        print(f"\n이미지 가림 시 오차 증가 {m-f:+.1f} px ({m/max(f,1e-9):.2f}배)")
+        a = np.array(res[tag]); n = n_gt[tag]
+        if not n:
+            print(f"{tag:10}  (샘플 없음)"); continue
+        hit = float(np.sum(a[:, 1] > 0.5)) if len(a) else 0.0
+        med[tag] = np.median(a[:, 0]) if len(a) else float("nan")
+        print(f"{tag:10}{n:9}{n_invalid[tag]:9}"
+              f"{med[tag]:11.1f} px{(np.median(a[:,1]) if len(a) else float('nan')):10.3f}"
+              f"{hit/n:20.1%}")
+    if len(med) == 2:
+        print(f"\n이미지 가림 시 오차 증가 {med['masked']-med['full']:+.1f} px "
+              f"({med['masked']/max(med['full'],1e-9):.2f}배)")
         print("  거의 안 늘면 비전을 안 쓰고 state 지름길만 탄 것이다.")
-        print(f"\nstate-only 기준선 26.2 px (집기 전, items_handover 실측) 와 비교할 것.")
+    print("\nstate-only 기준선 26.2 px (items_handover 집기 전 실측) 를 확실히 밑돌아야 한다.")
     print("BBOX-EVAL-DONE")
 
 

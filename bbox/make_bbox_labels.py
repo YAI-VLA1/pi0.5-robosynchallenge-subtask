@@ -24,10 +24,17 @@ NBIN = 1024
 
 
 def aabb_from_obb(cx, cy, w, h, th):
-    """회전 박스 -> 축정렬 외접 사각형 (정규화 좌표 그대로)."""
+    """회전 박스 -> 축정렬 외접 사각형 (정규화 좌표).
+
+    ★ w 는 W(640) 로, h 는 H(480) 로 정규화돼 있다. 축이 다르므로 정규화 값을
+      그대로 회전시키면 안 된다 — **픽셀로 되돌려 계산하고 다시 정규화**한다.
+      (예전 코드는 섞어 썼다: 120x20px 펜 60도에서 83x88 px 가 나왔는데
+       올바른 값은 77x114 px 다. 세로가 30% 작았다.)
+    """
     c, s = math.cos(th), math.sin(th)
-    ex = abs(w * c) / 2 + abs(h * s) / 2
-    ey = abs(w * s) / 2 + abs(h * c) / 2
+    w_px, h_px = w * W, h * H
+    ex = (abs(w_px * c) + abs(h_px * s)) / 2 / W
+    ey = (abs(w_px * s) + abs(h_px * c)) / 2 / H
     return cx - ex, cy - ey, cx + ex, cy + ey
 
 

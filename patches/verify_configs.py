@@ -13,7 +13,7 @@ config.py 가 import 조차 안 되는데 문자열 검사는 통과했다).
 
 import 순서는 scripts/train.py 를 따른다 (config 를 먼저 올리면 segfault).
 """
-import pathlib, sys
+import os, pathlib, sys
 import etils.epath as epath  # noqa: F401
 import flax.nnx as nnx  # noqa: F401
 import jax  # noqa: F401
@@ -40,6 +40,19 @@ def main():
         if wl and not str(wl).startswith("gs://"):
             wl_ok = pathlib.Path(wl).exists()
         marks = []
+        # RSC_BBOX: PI05_BBOX=1 인데 InjectBBox 가 없으면 **빈 슬롯만** 학습된다.
+        #   조용히 아무것도 안 배우므로 여기서 멈춘다.
+        if os.environ.get("PI05_BBOX") == "1":
+            import openpi.transforms as _t
+            has = any(isinstance(x, _t.InjectBBox) and x.labels_dir
+                      for x in dc.repack_transforms.inputs)
+            if not has:
+                marks.append("PI05_BBOX=1 인데 InjectBBox 라벨 경로 없음")
+            else:
+                d = next(x.labels_dir for x in dc.repack_transforms.inputs
+                         if isinstance(x, _t.InjectBBox))
+                if not list(pathlib.Path(d).glob("ep*.npy")):
+                    marks.append(f"bbox 라벨 디렉터리가 비었다 ({d})")
         if ns == 0:
             marks.append("norm_stats 없음")
         if not wl_ok:

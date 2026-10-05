@@ -7,6 +7,7 @@ mistake_starts 는 병합 데이터셋의 meta/mistake_starts.json 에서 읽어
 """
 import json, pathlib, sys
 
+BBOX_LABELS_DIR = "/workspace/bbox_tokens"
 NAME     = "pi05_robosyn_items_handover_mistake_cos82k"
 NAME_SUB = "pi05_robosyn_items_handover_subtask_mistake_cos82k"
 ANCHOR = '''    TrainConfig(
@@ -90,6 +91,9 @@ def block_for(name, lit, extra):
             image_key_left="observation.images.cam_left_wrist",
             image_key_right="observation.images.cam_right_wrist",
             state_key="observation.state",
+            # RSC_BBOX: 투영 GT 박스 라벨. 비면 Pen 슬롯이 **빈 채로** 학습된다.
+            #   PI05_BBOX=1 만 켜고 이 경로가 없으면 조용히 아무것도 안 배운다.
+            bbox_labels_dir=BBOX_LABELS_DIR,
             mistake_starts={lit},{extra}
         ),
         weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),

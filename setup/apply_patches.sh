@@ -22,11 +22,12 @@ shift || true
 P=$R/policy/pi05
 SCHED=${SCHED:-$REC/schedule/schedule_sim.json}
 
-SUB=0; MIS=0; MEM=0; REC_ROLL=0
+SUB=0; MIS=0; MEM=0; REC_ROLL=0; BBOX=0
 for a in "$@"; do case "$a" in
   --subtask) SUB=1 ;; --mistake) MIS=1 ;; --mem) MEM=1 ;;
   --recording) REC_ROLL=1 ;;
-  --all) SUB=1; MIS=1; MEM=1 ;;
+  --bbox) BBOX=1; MIS=1 ;;
+  --all) SUB=1; MIS=1; MEM=1; BBOX=1 ;;
   "") ;;                       # 빈 인자는 무시 (빈 배열 전개 방어)
   *) echo "모르는 인자: $a"; exit 1 ;;
 esac; done
@@ -72,6 +73,13 @@ fi
 if [ "$MIS" = 1 ]; then
   say "apply_mistake (episode_index + Mistake 필드)"
   python3 "$REC/mistake/apply_mistake.py" "$P" > /dev/null
+fi
+
+if [ "$BBOX" = 1 ]; then
+  say "bbox (Pen 슬롯 + 두 슬롯 디코드 + CE 인덱스 수정)"
+  python3 "$REC/bbox/apply_bbox.py"        "$P" > /dev/null
+  python3 "$REC/bbox/apply_bbox_decode.py" "$P" > /dev/null
+  python3 "$REC/bbox/apply_bbox_fix.py"    "$P" > /dev/null
 fi
 
 if [ "$MEM" = 1 ]; then
