@@ -72,6 +72,28 @@ ROLLOUT = [
 ]
 
 
+def check_bbox_single_pop(root: pathlib.Path) -> int:
+    """TokenizePrompt 안의 bbox pop 이 1번인지 본다.
+
+    '문자열이 있는가' 로는 **중복**을 못 잡는다. 두 번 돌면 두 번째가 None 을
+    받아 GT 가 조용히 사라진다 (오류 없이 bbox 감독만 빠진다).
+    """
+    p = root / f"{P}/transforms.py"
+    if not p.exists():
+        return 0
+    s = p.read_text()
+    i = s.find("class TokenizePrompt")
+    if i < 0:
+        return 0
+    j = s.find("\nclass ", i + 1)
+    n = s[i: len(s) if j < 0 else j].count('bbox = data.pop("bbox"')
+    if n == 1:
+        print(f"  OK {'bbox pop 1회 (중복 없음)':34} transforms.py")
+        return 0
+    print(f"  ✗  {'bbox pop 이 ' + str(n) + ' 회':34} transforms.py  <- 1 이어야 한다")
+    return 1
+
+
 def run(root: pathlib.Path, groups):
     bad = 0
     for title, items in groups:
@@ -99,6 +121,7 @@ def main():
         groups.append(("subtask", SUBTASK))
     if "--mistake" in sys.argv or "--all" in sys.argv:
         groups.append(("mistake", MISTAKE))
+    extra = 0
     if "--bbox" in sys.argv or "--all" in sys.argv:
         groups.append(("bbox", BBOX))
     if "--mem" in sys.argv or "--all" in sys.argv:
@@ -109,6 +132,9 @@ def main():
             "--rollout" in sys.argv or "--all" in sys.argv):
         groups.append(("롤아웃 녹화", ROLLOUT))
     bad = run(root, groups)
+    if "--bbox" in sys.argv or "--all" in sys.argv:
+        print()
+        bad += check_bbox_single_pop(root)
     print()
     if bad:
         sys.exit(f"VERIFY-PATCHES FAIL — 빠진 패치 {bad} 개. 해당 apply_*.py 를 돌릴 것.")

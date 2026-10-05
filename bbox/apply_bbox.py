@@ -25,6 +25,9 @@
 """
 import pathlib, sys
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import bbox_migrate
+
 MARK = "RSC_BBOX"
 
 def _norm(l):
@@ -164,16 +167,6 @@ TR_P = [
   '    mistake_field: bool = False\n'
   f'    # {MARK}: True 면 Pen 슬롯을 만든다. 학습·추론이 같아야 한다.\n'
   '    bbox_slot: bool = False', None),
- # 옛 설치에 남아 있는 bbox 블록을 **통째로 교체**한다. 안 하면 새 블록이
- # 그 아래에 또 붙어 `data.pop("bbox")` 가 두 번 돌고 **두 번째가 None 을 받아
- # GT 가 조용히 사라진다** (오류 없이 bbox 감독만 빠진다).
- ('''        # RSC_BBOX: 라벨이 없으면(추론) 빈 슬롯을 만들어 모델이 채우게 한다.
-        bbox = data.pop("bbox", None)
-        if bbox is None and self.bbox_slot:
-            bbox = np.zeros(5, np.int32)
-        subtask = data.pop("subtask", None)''',
-  '        subtask = data.pop("subtask", None)', None),
-
  ('        subtask = data.pop("subtask", None)',
   f'        # {MARK}: 라벨이 없으면(추론) 빈 슬롯을 만들어 모델이 채우게 한다.\n'
   '        bbox = data.pop("bbox", None)\n'
@@ -238,6 +231,10 @@ def main():
     for rel, patches in ((TOK, TOK_P), (TR, TR_P), (POL, POL_P), (CFG, CFG_P)):
         p = root / rel
         s = p.read_text()
+        if rel == TR:
+            # 패치 목록에 넣으면 fresh / 이미 최종형 상태에서 앵커 0 개로 죽는다.
+            s, why = bbox_migrate.migrate(s)
+            print(f"  {rel:46} 마이그레이션: {why}")
         n = 0
         for old, new, scope in patches:
             s, did = rep(s, old, new, scope=scope, path=rel)
@@ -245,6 +242,8 @@ def main():
         # transforms.py 는 pathlib 이 필요하다
         if rel == TR and "import pathlib" not in s:
             s = s.replace("import dataclasses", "import dataclasses\nimport pathlib", 1)
+        if rel == TR:
+            bbox_migrate.check_single_pop(s, rel)
         p.write_text(s)
         print(f"  {rel:46} {n}/{len(patches)} 적용")
         total += n
