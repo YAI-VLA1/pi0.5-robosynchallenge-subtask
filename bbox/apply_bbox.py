@@ -164,6 +164,16 @@ TR_P = [
   '    mistake_field: bool = False\n'
   f'    # {MARK}: True 면 Pen 슬롯을 만든다. 학습·추론이 같아야 한다.\n'
   '    bbox_slot: bool = False', None),
+ # 옛 설치에 남아 있는 bbox 블록을 **통째로 교체**한다. 안 하면 새 블록이
+ # 그 아래에 또 붙어 `data.pop("bbox")` 가 두 번 돌고 **두 번째가 None 을 받아
+ # GT 가 조용히 사라진다** (오류 없이 bbox 감독만 빠진다).
+ ('''        # RSC_BBOX: 라벨이 없으면(추론) 빈 슬롯을 만들어 모델이 채우게 한다.
+        bbox = data.pop("bbox", None)
+        if bbox is None and self.bbox_slot:
+            bbox = np.zeros(5, np.int32)
+        subtask = data.pop("subtask", None)''',
+  '        subtask = data.pop("subtask", None)', None),
+
  ('        subtask = data.pop("subtask", None)',
   f'        # {MARK}: 라벨이 없으면(추론) 빈 슬롯을 만들어 모델이 채우게 한다.\n'
   '        bbox = data.pop("bbox", None)\n'

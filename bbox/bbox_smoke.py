@@ -73,10 +73,18 @@ def main():
         txt3, ids3, m3, lm3 = run(gidx)
         cov3 = [int(x) for x in ids3[lm3.astype(bool)]]
         nloc3 = sum(1 for x in cov3 if 256000 <= x <= 257023)
-        print(f"③ 박스 없는 프레임 (ep{ep} f{fr}) — loss mask {len(cov3)}개, <loc> {nloc3}개")
-        ok["③ 안 보이면 슬롯 loss 제외"] = (nloc3 == 0 and len(cov3) == 14)
+        # 새 설계: 구조 mask 는 **18칸 유지**(attention 경계·디코드 시작점이 라벨
+        #   유무에 흔들리면 안 된다). bbox 감독만 CE 에서 `tgt == pad_id` 로 뺀다.
+        #   14칸을 기대하면 올바르게 고친 코드에서도 실패한다.
+        n_pad = sum(1 for x in cov3[:4] if int(x) == 0)
+        print(f"③ 박스 없는 프레임 (ep{ep} f{fr}) — 구조 mask {len(cov3)}칸, "
+              f"<loc> {nloc3}개, bbox 자리 pad {n_pad}/4")
+        ok["③ 구조 mask 는 18칸 유지"] = (len(cov3) == 18)
+        ok["③b bbox 자리는 pad (CE 에서 제외)"] = (nloc3 == 0 and n_pad == 4)
     else:
-        print("③ 박스 없는 프레임을 못 찾음 — 건너뜀"); ok["③ 안 보이면 슬롯 loss 제외"] = True
+        print("③ 박스 없는 프레임을 못 찾음 — 건너뜀")
+        ok["③ 구조 mask 는 18칸 유지"] = True
+        ok["③b bbox 자리는 pad (CE 에서 제외)"] = True
 
     # ④ 추론 경로 (InjectBBox 없음)
     txt4, ids4, m4, lm4 = run(0, drop_bbox=True)
