@@ -20,18 +20,36 @@ import pathlib, sys
 MARK = "RSC_MISTAKE"
 
 
+def _norm(l):
+    """줄 끝의 `,` `)` `:` 와 공백을 떼고 비교한다.
+
+    패치끼리 **같은 줄**(함수 시그니처 등)에 인자를 덧붙이면, 먼저 적용된 패치가
+    넣은 줄의 끝이 `= None):` 에서 `= None,` 로 바뀐다. 통째로 비교하면
+    '아직 적용 안 됨' 으로 오판하고 사라진 앵커를 찾다 죽는다. (2026-10-05)
+    """
+    return l.strip().rstrip(",):").strip()
+
+
 def scoped_replace(text, old, new, *, scope=None, path=""):
     """앵커 유일성을 검사하고 바꾼다. scope 가 있으면 그 클래스 본문 안에서만 찾는다."""
     # 멱등 판정: new 에만 있고 old 에는 없는 줄들이 이미 전부 들어 있으면 적용됐다.
     # `new in text` 로는 안 된다 — 다른 패치가 사이에 줄을 끼우면 통째 비교가 깨져
     # 같은 블록을 두 번 넣는다 (2026-10-04 libero_policy.py 에서 실제로 그랬다).
-    added = [ln for ln in new.splitlines() if ln.strip() and ln not in old.splitlines()]
+    oldn = {_norm(l) for l in old.splitlines()}
+    # 주석은 판정에서 뺀다 — 패치마다 MARK 문자열이 달라 같은 코드를 '미적용' 으로 본다.
+    added = [_norm(l) for l in new.splitlines()
+             if l.strip() and not l.strip().startswith("#") and _norm(l) not in oldn]
     hay = text
     if scope and scope in text:
         i = text.index(scope)
         j = text.find("\nclass ", i + 1)
         hay = text[i: len(text) if j < 0 else j]
-    if added and all(ln in hay for ln in added):
+    hayn = [_norm(l) for l in hay.splitlines()]
+    # 정확히 같은 줄이 아니라 **부분 문자열** 로 본다. 패치끼리 같은 호출에
+    # 인자를 덧붙이면 `f(a, b)` 가 `f(a, b, c)` 가 되어 완전 일치가 깨진다.
+    def _has(ln):
+        return any(ln and ln in h for h in hayn)
+    if added and all(_has(ln) for ln in added):
         return text, False
     body, lo = text, 0
     if scope:

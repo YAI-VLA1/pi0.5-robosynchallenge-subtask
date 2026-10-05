@@ -27,13 +27,31 @@ import pathlib, sys
 
 MARK = "RSC_BBOX"
 
+def _norm(l):
+    """줄 끝의 `,` `)` `:` 와 공백을 떼고 비교한다.
+
+    패치끼리 **같은 줄**(함수 시그니처 등)에 인자를 덧붙이면, 먼저 적용된 패치가
+    넣은 줄의 끝이 `= None):` 에서 `= None,` 로 바뀐다. 통째로 비교하면
+    '아직 적용 안 됨' 으로 오판하고 사라진 앵커를 찾다 죽는다. (2026-10-05)
+    """
+    return l.strip().rstrip(",):").strip()
+
+
 def rep(text, old, new, *, scope=None, path="", mark=MARK):
-    added = [l for l in new.splitlines() if l.strip() and l not in old.splitlines()]
+    oldn = {_norm(l) for l in old.splitlines()}
+    # 주석은 판정에서 뺀다 — 패치마다 MARK 문자열이 달라 같은 코드를 '미적용' 으로 본다.
+    added = [_norm(l) for l in new.splitlines()
+             if l.strip() and not l.strip().startswith("#") and _norm(l) not in oldn]
     hay = text
     if scope and scope in text:
         i = text.index(scope); j = text.find("\nclass ", i + 1)
         hay = text[i: len(text) if j < 0 else j]
-    if added and all(l in hay for l in added):
+    hayn = [_norm(l) for l in hay.splitlines()]
+    # 정확히 같은 줄이 아니라 **부분 문자열** 로 본다. 패치끼리 같은 호출에
+    # 인자를 덧붙이면 `f(a, b)` 가 `f(a, b, c)` 가 되어 완전 일치가 깨진다.
+    def _has(ln):
+        return any(ln and ln in h for h in hayn)
+    if added and all(_has(ln) for ln in added):
         return text, False
     body, lo = text, 0
     if scope:
@@ -96,12 +114,15 @@ TOK_P = [
   '        lo_bbox = len(head)\n'
   '        lo = lo_bbox + len(bbox_body) + len(mid)', None),
 
+ # 처음부터 **최종형** 을 내보낸다. 예전에는 중간형을 넣고 apply_bbox_fix 가
+ # 덮어썼는데, 그러면 setup 재실행 때 이 패치가 중간형을 찾다 앵커 0 개로 죽는다.
  ('        loss = [lo <= i < lo + self.SUBTASK_SLOT for i in range(self._max_len)]',
-  f'        # {MARK}: 두 슬롯을 모두 덮는다. bbox 가 안 보이면 그 슬롯은 빼야 하므로\n'
-  '        #   bbox_body 가 패딩인 경우를 따로 판정한다.\n'
-  '        bbox_on = bool(bbox_body) and any(t != pad_id0 for t in bbox_body)\n'
+  f'        # {MARK}: loss mask 는 **가시성과 무관하게** 두 슬롯을 덮는다.\n'
+  '        #   이 마스크는 attention causal 블록 경계와 디코드 시작점으로도 쓰인다.\n'
+  '        #   라벨이 없다고 그게 달라지면 추론에서 슬롯 위치가 밀린다.\n'
+  '        #   감독 여부는 CE 쪽에서 `tgt == pad_id` 로 가린다.\n'
   '        loss = [(lo <= i < lo + self.SUBTASK_SLOT)\n'
-  '                or (bbox_on and lo_bbox <= i < lo_bbox + len(bbox_body))\n'
+  '                or (lo_bbox <= i < lo_bbox + len(bbox_body))\n'
   '                for i in range(self._max_len)]', None),
 ]
 
@@ -146,7 +167,11 @@ TR_P = [
  ('        subtask = data.pop("subtask", None)',
   f'        # {MARK}: 라벨이 없으면(추론) 빈 슬롯을 만들어 모델이 채우게 한다.\n'
   '        bbox = data.pop("bbox", None)\n'
-  '        if bbox is None and self.bbox_slot:\n'
+  f'        # {MARK}: bbox 를 끄면 라벨이 들어와도 버린다 — 안 그러면 토크나이저는\n'
+  '        #   슬롯을 만들고 모델은 없다고 가정해 CE 인덱스가 어긋난다.\n'
+  '        if not self.bbox_slot:\n'
+  '            bbox = None\n'
+  '        elif bbox is None:\n'
   '            bbox = np.zeros(5, np.int32)\n'
   '        subtask = data.pop("subtask", None)', None),
  ('            tokens, token_masks, loss_mask = self.tokenizer.tokenize_with_subtask(\n'

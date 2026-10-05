@@ -80,6 +80,9 @@ if [ "$BBOX" = 1 ]; then
   python3 "$REC/bbox/apply_bbox.py"        "$P" > /dev/null
   python3 "$REC/bbox/apply_bbox_decode.py" "$P" > /dev/null
   python3 "$REC/bbox/apply_bbox_fix.py"    "$P" > /dev/null
+  # PI05_BBOX=1 이면 cam_high 기하 증강을 끈다 — 라벨은 원본 좌표라
+  # 크롭 32px + 회전 35px 가 state-only 기준선(26.2px)을 넘는 잡음이 된다.
+  python3 "$REC/bbox/apply_bbox_aug.py"    "$P" > /dev/null
 fi
 
 if [ "$MEM" = 1 ]; then

@@ -109,7 +109,17 @@ def main():
     root = pathlib.Path(sys.argv[1] if len(sys.argv) > 1
                         else "/workspace/rsc_ws/RoboSynChallenge/policy/pi05")
     done = 0
-    for rel, pairs in ((TOK, [(TOK_A, TOK_B)]), (PI0, [(PI0_A, PI0_B), (PI0_A2, PI0_B2)])):
+    # tokenizer 의 loss mask 는 이제 apply_bbox.py 가 처음부터 최종형으로 넣는다.
+    # 여기서는 **옛 중간형이 남아 있을 때만** 바로잡는다 (기존 설치 마이그레이션).
+    tp = root / TOK
+    ts = tp.read_text()
+    if TOK_A in ts:
+        tp.write_text(ts.replace(TOK_A, TOK_B, 1))
+        print(f"  {TOK}: ✓ 중간형 -> 최종형")
+    else:
+        print(f"  {TOK}: 최종형 (apply_bbox 가 이미 넣었다)")
+
+    for rel, pairs in ((PI0, [(PI0_A, PI0_B), (PI0_A2, PI0_B2)]),):
         p = root / rel
         s = p.read_text()
         if MARK in s:

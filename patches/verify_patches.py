@@ -64,6 +64,8 @@ BBOX = [
     (f"{P}/policies/libero_policy.py",    'inputs["bbox"]',            "bbox 통과"),
     (f"{P}/training/config.py",           "bbox_labels_dir",           "데이터 배선"),
     (f"{P}/models/pi0.py",                "RSC_BBOXDEC",               "두 슬롯 디코드"),
+    (f"{P}/models/pi0.py",                "RSC_BBOXFIX",               "두 슬롯 CE 인덱스"),
+    (f"{P}/models/model.py",              "RSC_BBOXAUG",               "bbox 시 기하 증강 끔"),
 ]
 ROLLOUT = [
     ("scripts/eval_policy.py",            "RSC_ALIGN",                 "녹화 (o_t, a_t) 정렬 (R1)"),
