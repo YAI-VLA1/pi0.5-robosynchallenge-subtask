@@ -57,6 +57,14 @@ MEM_INFER = [
     ("policy/pi05/pi_model.py",           "RSC_MEMINFER",              "4D transpose (R8)"),
     (f"{P}/policies/libero_policy.py",    "RSC_MEMINFER",              "추론 frame_valid 통과 (R8)"),
 ]
+BBOX = [
+    (f"{P}/models/tokenizer.py",          "BBOX_SLOT",                 "Pen 슬롯 토크나이즈"),
+    (f"{P}/transforms.py",                "class InjectBBox",          "라벨 주입"),
+    (f"{P}/transforms.py",                "bbox_slot",                 "TokenizePrompt 스위치"),
+    (f"{P}/policies/libero_policy.py",    'inputs["bbox"]',            "bbox 통과"),
+    (f"{P}/training/config.py",           "bbox_labels_dir",           "데이터 배선"),
+    (f"{P}/models/pi0.py",                "RSC_BBOXDEC",               "두 슬롯 디코드"),
+]
 ROLLOUT = [
     ("scripts/eval_policy.py",            "RSC_ALIGN",                 "녹화 (o_t, a_t) 정렬 (R1)"),
 ]
@@ -89,6 +97,8 @@ def main():
         groups.append(("subtask", SUBTASK))
     if "--mistake" in sys.argv or "--all" in sys.argv:
         groups.append(("mistake", MISTAKE))
+    if "--bbox" in sys.argv or "--all" in sys.argv:
+        groups.append(("bbox", BBOX))
     if "--mem" in sys.argv or "--all" in sys.argv:
         groups.append(("MEM", MEM))
         if (root / "policy/pi05/deploy_policy.py").exists():
