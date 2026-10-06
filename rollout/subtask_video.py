@@ -34,18 +34,35 @@ def decode(path):
     return np.frombuffer(p.stdout, np.uint8).reshape(-1, 480, 640, 3)
 
 
-def sentences(dump, slot=14):
+LOC0, NBIN = 256000, 1024
+BBOX_SLOT, BBOX_MID, SUBTASK_SLOT = 4, 4, 14
+
+
+def parse_dump(dump):
+    """덤프 한 줄 -> (문장, 박스 or None).
+
+    bbox 를 켜고 돌린 덤프는 Pen 4 | "; Subtask:" 4 | Subtask 14 = 22 토큰이다.
+    끈 덤프는 14 토큰이라 길이로 구분한다.
+    """
     import openpi.models.tokenizer as T
     sp = T.PaligemmaTokenizer(200)._tokenizer
     out = []
     for ln in pathlib.Path(dump).read_text().splitlines():
         if not ln.strip():
             continue
-        ids = [int(x) for x in ln.split(",")][:slot]
+        ids = [int(x) for x in ln.split(",")]
+        box = None
+        if len(ids) >= BBOX_SLOT + BBOX_MID + SUBTASK_SLOT:
+            b = ids[:BBOX_SLOT]
+            if all(LOC0 <= t < LOC0 + NBIN for t in b):
+                ymin, xmin, ymax, xmax = [(t - LOC0) / (NBIN - 1) for t in b]
+                box = (xmin, ymin, xmax, ymax)       # 0~1 정규화
+            ids = ids[BBOX_SLOT + BBOX_MID:]
+        ids = ids[:SUBTASK_SLOT]
         cut = [i for i in ids if i != 0]
         if cut and cut[-1] == 1:
             cut = cut[:-1]
-        out.append(sp.decode(cut).strip() or "(빈 슬롯)")
+        out.append((sp.decode(cut).strip() or "(빈 슬롯)", box))
     return out
 
 
@@ -56,7 +73,9 @@ def main():
     want = [int(x) for x in sys.argv[4:]] or None
 
     eps = [json.loads(l) for l in (root / "meta/episodes.jsonl").read_text().splitlines()]
-    sents = sentences(dump)
+    parsed = parse_dump(dump)
+    sents = [x[0] for x in parsed]
+    boxes = [x[1] for x in parsed]
     calls = [math.ceil(e["length"] / PI0_STEP) for e in eps]
     # 평가가 아직 돌고 있으면 덤프가 데이터셋보다 앞서거나 뒤처진다.
     # **덤프가 다 들어온 에피소드까지만** 쓴다. 모자란 채로 라벨을 붙이면
@@ -83,6 +102,7 @@ def main():
         ep, T_ = e["episode_index"], e["length"]
         n = calls[ep]
         my = sents[off:off + n]
+        myb = boxes[off:off + n]
         off += n
         if want is not None and ep not in want:
             continue
@@ -110,6 +130,16 @@ def main():
                            f"   {'SUCCESS' if succ else 'fail'}",
                    font=f18, fill=(235, 235, 235))
             d.text((8, 32), f'subtask: "{cur}"', font=f22, fill=(120, 220, 255))
+            if myb[k] is None:
+                d.text((W - 150, 32), "bbox: 없음", font=f15, fill=(200, 120, 120))
+            # 예측 bbox (cam_high 좌표). 모델이 생성한 Pen 슬롯을 그대로 그린다.
+            bx = myb[k]
+            if bx is not None:
+                x0, y0, x1, y1 = bx[0]*640, bx[1]*480, bx[2]*640, bx[3]*480
+                for t in range(3):
+                    d.rectangle([x0-t, TOP+y0-t, x1+t, TOP+y1+t], outline=(80, 230, 120))
+                d.text((max(2, x0), max(TOP, TOP+y0-16)), "pen (pred)", font=f15,
+                       fill=(80, 230, 120))
             d.line([640, TOP, 640, TOP + H], fill=(40, 40, 45), width=2)
             d.text((8, TOP + H - 20), "cam_high", font=f15, fill=(230, 230, 60))
             d.text((648, TOP + H - 20), "cam_right_wrist", font=f15, fill=(230, 230, 60))

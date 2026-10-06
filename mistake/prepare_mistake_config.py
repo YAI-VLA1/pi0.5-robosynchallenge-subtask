@@ -8,6 +8,7 @@ mistake_starts 는 병합 데이터셋의 meta/mistake_starts.json 에서 읽어
 import json, pathlib, sys
 
 BBOX_LABELS_DIR = "/workspace/bbox_tokens"
+WRIST_LABELS_DIR = "/workspace/wrist_bbox_tokens"   # 순기구학 투영
 NAME     = "pi05_robosyn_items_handover_mistake_cos82k"
 NAME_SUB = "pi05_robosyn_items_handover_subtask_mistake_cos82k"
 ANCHOR = '''    TrainConfig(
@@ -46,6 +47,7 @@ def main():
     bbox_line = ("            # RSC_BBOX: 투영 GT 박스 라벨 (경로는 리터럴 — 변수 이름을\n"
                  "            #   그대로 내보내면 config.py 에서 NameError 다).\n"
                  f"            bbox_labels_dir={BBOX_LABELS_DIR!r},\n"
+                 f"            wrist_bbox_labels_dir={WRIST_LABELS_DIR!r},\n"
                  if "bbox_labels_dir: str" in s else "")
     if not bbox_line:
         print("  (bbox 필드가 없다 — bbox_labels_dir 인자를 넣지 않는다)")
@@ -100,7 +102,10 @@ def block_for(name, lit, extra, bbox_line=""):
             image_key_left="observation.images.cam_left_wrist",
             image_key_right="observation.images.cam_right_wrist",
             state_key="observation.state",
-{bbox_line}            mistake_starts={lit},{extra}
+{bbox_line}            # RSC_GRASPW: 집기 전후 구간. '그리퍼 닫기'(74~89)만 좁게 잡으면
+            #   그 앞의 접근 궤적이 안 바뀌어 효과가 적다. lower~lift 를 덮는다.
+            grasp_window=(50, 113),
+            mistake_starts={lit},{extra}
         ),
         weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
         freeze_filter=pi0_config.Pi0Config(

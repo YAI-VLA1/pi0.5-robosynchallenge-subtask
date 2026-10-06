@@ -22,6 +22,16 @@ import numpy as np
 W, H = 640, 480
 NBIN = 1024
 
+# visible 열은 **3상태** 다.
+#   0  추론용 빈 슬롯 (라벨 파일에는 안 나온다 — 모델이 채운다)
+#   1  실제 박스
+#   2  "박스 없음" — 화면 밖. 이것도 **CE 로 가르친다.**
+#      예전에는 pad 로 두고 손실에서 뺐는데, 그러면 그 자리에 무엇을 넣어도
+#      벌점이 없다는 걸 15% 학습시킨 셈이다. 실제로 추론에서 BOS/'Sub' 가 샜다.
+#      네 칸 모두 0 은 ymax<=ymin 이라 실제 박스로는 절대 안 나오는 값이라 안전하다.
+VIS_NONE, VIS_BOX = 2, 1
+NO_BOX_TOK = (0, 0, 0, 0)
+
 
 def aabb_from_obb(cx, cy, w, h, th):
     """회전 박스 -> 축정렬 외접 사각형 (정규화 좌표).
@@ -59,20 +69,23 @@ def main():
         for i, (cx, cy, w, h, th, vis) in enumerate(g):
             ntot += 1
             if vis == 0:
+                t[i] = NO_BOX_TOK + (VIS_NONE,)      # 화면 밖 — "박스 없음" 을 **가르친다**
                 continue
             x0, y0, x1, y1 = aabb_from_obb(cx, cy, w, h, th)
             # 화면 밖으로 삐져나간 부분은 자른다. 완전히 밖이면 보이지 않는 것으로 둔다.
             cx0, cy0 = max(x0, 0.0), max(y0, 0.0)
             cx1, cy1 = min(x1, 1.0), min(y1, 1.0)
             if cx1 <= cx0 or cy1 <= cy0:
+                t[i] = NO_BOX_TOK + (VIS_NONE,)      # 완전히 화면 밖
                 continue
             if (x0 < 0) or (y0 < 0) or (x1 > 1) or (y1 > 1):
                 clipped += 1
-            t[i] = (quant(cy0), quant(cx0), quant(cy1), quant(cx1), 1)
+            t[i] = (quant(cy0), quant(cx0), quant(cy1), quant(cx1), VIS_BOX)
             nvis += 1
         np.save(out / f.name, t)
 
     print(f"프레임 {ntot:,} · 박스 있는 프레임 {nvis:,} ({nvis/ntot:.1%})")
+    print(f"  '박스 없음' 으로 가르치는 프레임 {ntot-nvis:,} ({1-nvis/ntot:.1%})")
     print(f"  화면 경계에서 잘린 박스 {clipped:,} ({clipped/max(nvis,1):.1%})")
     print(f"형식: [ymin, xmin, ymax, xmax, visible]  각 0~{NBIN-1}  (PaliGemma 순서)")
     print(f"-> {out}")

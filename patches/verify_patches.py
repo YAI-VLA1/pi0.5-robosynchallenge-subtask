@@ -66,6 +66,11 @@ BBOX = [
     (f"{P}/models/pi0.py",                "RSC_BBOXDEC",               "두 슬롯 디코드"),
     (f"{P}/models/pi0.py",                "RSC_BBOXFIX",               "두 슬롯 CE 인덱스"),
     (f"{P}/models/model.py",              "RSC_BBOXAUG",               "bbox 시 기하 증강 끔"),
+    (f"{P}/models/tokenizer.py",          "RSC_NOBOX",                 "'박스 없음' 을 가르침"),
+    (f"{P}/models/tokenizer.py",          "RSC_WBOX",                  "손목 슬롯 토크나이즈"),
+    (f"{P}/models/pi0.py",                "RSC_WBOX",                  "손목 CE·디코드"),
+    (f"{P}/training/config.py",           "wrist_bbox_labels_dir",     "손목 라벨 배선"),
+    (f"{P}/models/pi0.py",                "RSC_GRASPW",                "집기 구간 손실 가중"),
 ]
 ROLLOUT = [
     ("scripts/eval_policy.py",            "RSC_ALIGN",                 "녹화 (o_t, a_t) 정렬 (R1)"),

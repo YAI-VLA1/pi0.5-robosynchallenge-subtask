@@ -57,14 +57,18 @@ def main():
     nloc = sum(1 for x in cov if 256000 <= x <= 257023)
     print(f"② loss mask 가 덮는 토큰 {len(cov)}개 — 그중 <loc> {nloc}개")
     print(f"    디코드: {sp.decode(cov)!r}\n")
-    ok["② loss mask = bbox4 + subtask14"] = (len(cov) == 18 and nloc == 4)
+    import os as _o
+    _w = _o.environ.get("PI05_BBOX_WRIST", "0") == "1"
+    want_loc, want_len = (8, 22) if _w else (4, 18)
+    ok[f"② loss mask = bbox{'+wrist' if _w else ''} + subtask14"] = (
+        len(cov) == want_len and nloc == want_loc)
 
     # ③ 박스 없는 프레임 찾기
     import glob, pathlib
     found = None
     for ep in range(5):
         t = np.load(f"/workspace/bbox_tokens/ep{ep:04d}.npy")
-        z = np.flatnonzero(t[:, 4] == 0)
+        z = np.flatnonzero(t[:, 4] == 2)
         if len(z):
             found = (ep, int(z[0])); break
     if found:
@@ -76,15 +80,16 @@ def main():
         # 새 설계: 구조 mask 는 **18칸 유지**(attention 경계·디코드 시작점이 라벨
         #   유무에 흔들리면 안 된다). bbox 감독만 CE 에서 `tgt == pad_id` 로 뺀다.
         #   14칸을 기대하면 올바르게 고친 코드에서도 실패한다.
-        n_pad = sum(1 for x in cov3[:4] if int(x) == 0)
+        n_pad = sum(1 for x in cov3[:4] if int(x) == 0)  # 참고용
         print(f"③ 박스 없는 프레임 (ep{ep} f{fr}) — 구조 mask {len(cov3)}칸, "
               f"<loc> {nloc3}개, bbox 자리 pad {n_pad}/4")
-        ok["③ 구조 mask 는 18칸 유지"] = (len(cov3) == 18)
-        ok["③b bbox 자리는 pad (CE 에서 제외)"] = (nloc3 == 0 and n_pad == 4)
+        # 새 규약: '박스 없음' 은 <loc0000> 로 **감독된다** (pad 아님)
+        ok["③ 구조 mask 유지"] = (len(cov3) == want_len)
+        ok["③b '박스 없음' 이 <loc0000> 로 감독"] = (nloc3 == want_loc)
     else:
         print("③ 박스 없는 프레임을 못 찾음 — 건너뜀")
-        ok["③ 구조 mask 는 18칸 유지"] = True
-        ok["③b bbox 자리는 pad (CE 에서 제외)"] = True
+        ok["③ 구조 mask 유지"] = True
+        ok["③b '박스 없음' 이 <loc0000> 로 감독"] = True
 
     # ④ 추론 경로 (InjectBBox 없음)
     txt4, ids4, m4, lm4 = run(0, drop_bbox=True)

@@ -83,6 +83,12 @@ if [ "$BBOX" = 1 ]; then
   # PI05_BBOX=1 이면 cam_high 기하 증강을 끈다 — 라벨은 원본 좌표라
   # 크롭 32px + 회전 35px 가 state-only 기준선(26.2px)을 넘는 잡음이 된다.
   python3 "$REC/bbox/apply_bbox_aug.py"    "$P" > /dev/null
+  # "박스 없음" 을 CE 에서 빼지 않고 <loc0000>×4 로 가르친다.
+  python3 "$REC/bbox/apply_bbox_nobox.py"  "$P" > /dev/null
+  # 손목 카메라 슬롯 (PI05_BBOX_WRIST=1 로 켠다)
+  python3 "$REC/bbox/apply_bbox_wrist.py"  "$P" > /dev/null
+  # 집기 구간 손실 가중 (PI05_GRASP_W=3.0 로 켠다)
+  python3 "$REC/bbox/apply_grasp_weight.py" "$P" > /dev/null
 fi
 
 if [ "$MEM" = 1 ]; then

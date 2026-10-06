@@ -198,3 +198,78 @@ loss mask: 18토큰 (bbox 4 + subtask 14) — 사이 텍스트·head·tail 제�
 /workspace/obb_labels/                 라벨 1,000 에피소드
 /workspace/obb_check/vis.png           투영 검증 그림
 ```
+
+
+---
+
+## 2026-10-06 추가 — 손목 카메라 슬롯 · "박스 없음" CE · 집기 가중
+
+### 1차 bbox 학습 결과 (H100 batch 32, 1 epoch, step 10661)
+
+| 도달 단계 | 기존 subtask | MEM+mistake | **+bbox** |
+|---|---|---|---|
+| 아무것도 | 89% | 85% | **44%** |
+| 1 들기 | — | 5% | 13% |
+| 2 중앙이동 | — | 4% | **22%** |
+| 3 holder 위 | — | 1% | **16%** |
+| 4 삽입 | — | 5% | 5% |
+| 펜 들림 | 11/100 | 15/100 | **56/100** |
+| 공식 성공 | 1/100 | 0/100 | **3/100** |
+
+펜 들림 CI 가 겹치지 않는다 (46.2~65.3% vs 9.3~23.3%).
+
+**다만 박스 정확도는 기준선 미달이다.**
+```
+중심 오차 중앙값 29.2 px   >  state-only 기준선 26.2 px
+IoU 중앙값 0.441 · >0.5 41% (전체 GT 대비 30%)
+박스를 낸 호출 73% — 27% 는 <loc> 아닌 토큰 (BOS 526회, 'Sub' 300회)
+```
+성능은 올랐는데 박스는 기준선을 못 넘었다 — 명시적 grounding 보다
+**보조 과제가 비전 표현을 다듬은 효과**일 수 있다. 구분하려면 이미지 가림 ablation 이 필요하다.
+
+### 고친 것 세 가지
+
+**① "박스 없음" 을 가르친다** (`apply_bbox_nobox.py`)
+펜이 화면 밖인 14.9% 를 pad 로 두고 CE 에서 뺐었다. 그러면 "그 자리에 무엇을
+넣어도 벌점이 없다" 를 15% 학습시킨다 — 추론 27% invalid 의 유력한 원인이다.
+visible 을 3상태로 바꿨다: `1`=실제 박스, `2`="박스 없음"(<loc0000>×4 로 가르침),
+`0`=추론 빈 슬롯. 네 칸 모두 0 은 ymax<=ymin 이라 실제 박스로는 안 나오는 값이다.
+
+**② 손목 카메라 슬롯** (`wrist_bbox.py`, `apply_bbox_wrist.py`)
+```
+State: ...; Mistake: false; Pen:<4> Wrist:<4>; Subtask: ...;\nAction:
+                            cam_high  cam_right_wrist
+```
+손목은 `right_link6` 에 붙어 있어 매 프레임 qpos 로 **순기구학**을 푼다
+(pinocchio + CobotMagicWithGripperV100 URDF).
+규약은 탐색으로 확정했다 — quat **wxyz** + 축 변환 `diag(1,-1,-1)`(OpenGL→OpenCV).
+접근~집기 40/40 프레임이 화면 안에 들어오고 실제 영상과 일치한다.
+
+두 뷰가 **상보적**이다 (327,000 프레임 실측):
+```
+cam_high 만  10.9%   손목 만  14.8%   둘 다 74.2%   둘 다 없음  0.0%
+구간별   왼팔운반 high 70% / 손목 100%     꽂기 high 79% / 손목 56%
+```
+
+**③ 집기 구간 손실 가중** (`apply_grasp_weight.py`)
+성패를 가르는 '그리퍼 닫기' 가 데이터의 **4.9%** 뿐이다 (327 중 16 프레임).
+`grasp_window=(50, 113)`(lower~lift) 에 `PI05_GRASP_W` 를 곱한다.
+오버샘플링이 아니라 가중이라 이미지가 반복되지 않는다.
+
+### 켜기
+
+```bash
+PI05_BBOX=1 PI05_BBOX_WRIST=1 PI05_GRASP_W=3.0 \
+PI05_SUBTASK_W=1.0 PI05_MISTAKE=1 PI05_MEM_FRAMES=6 bash setup/train.sh
+```
+
+라벨: `/workspace/bbox_tokens` (cam_high) · `/workspace/wrist_bbox_tokens` (손목)
+
+### 검증
+
+```
+bbox_ce_test.py    손목 ON/OFF 각각 5/5 — CE 가 실제로 보는 토큰을 디코드해 확인
+bbox_smoke.py      실제 배치 6/6 — 프롬프트 문자열, 구조 mask 22칸, 추론 빈 슬롯
+grasp_smoke.py     3/3 — 집기 3.0 / 그 밖 1.0 / '박스 없음' <loc0000>×4
+verify_patches.py --bbox
+```
