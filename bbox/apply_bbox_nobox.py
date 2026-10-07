@@ -42,10 +42,13 @@ PI0_A = '''        # RSC_BBOXFIX: 박스가 안 보이는 프레임은 슬롯이
         if _RSC_BBOX_ON:
             is_bbox = (jnp.arange(tgt.shape[1]) < n_bbox)[None, :]
             msk = msk * (~(is_bbox & (tgt == _RSC_PAD_ID))).astype(jnp.float32)'''
-PI0_B = f'''        # {MARK}: '박스 없음' 도 <loc0000> 네 개로 **가르친다**. pad 를 빼는 처리를
-        #   없앴다 — 그게 "그 자리에 무엇을 넣어도 벌점 없음" 을 14.9% 학습시켰고,
-        #   추론에서 27% 가 <loc> 아닌 토큰(BOS, 'Sub')을 내는 원인으로 보인다.
-        #   학습 라벨에는 pad 가 더 이상 안 들어온다 (visible 3상태).'''
+PI0_B = f"""        # {MARK}: '박스 없음' 은 <loc0000>(id 256000) 네 개로 **가르친다**.
+        #   pad(id 0) 제외는 **그대로 둔다** — 둘은 id 가 달라 충돌하지 않는다.
+        #   라벨 파일이 없는 프레임은 여전히 빈 슬롯(pad)으로 가는데, 그걸 CE 대상으로
+        #   삼으면 '패딩을 맞혀라' 를 가르치게 된다. 누락은 verify 로 따로 잡는다.
+        if _RSC_BBOX_ON:
+            is_bbox = (jnp.arange(tgt.shape[1]) < n_bbox)[None, :]
+            msk = msk * (~(is_bbox & (tgt == _RSC_PAD_ID))).astype(jnp.float32)"""
 
 
 def main():

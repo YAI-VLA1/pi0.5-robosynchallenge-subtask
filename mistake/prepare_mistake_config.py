@@ -51,11 +51,18 @@ def main():
                  if "bbox_labels_dir: str" in s else "")
     if not bbox_line:
         print("  (bbox 필드가 없다 — bbox_labels_dir 인자를 넣지 않는다)")
+    # RSC_GRASPW: 이 필드는 집기 가중 패치(bbox 설치에 포함)가 만든다.
+    #   --mistake 만 설치하면 없으므로 인자를 넣으면 TypeError 다.
+    grasp_line = ("            # RSC_GRASPW: 집기 전후(lower~lift). PI05_GRASP_W 로 켠다.\n"
+                  "            grasp_window=(50, 113),\n"
+                  if "grasp_window: tuple" in s else "")
+    if not grasp_line:
+        print("  (grasp_window 필드가 없다 — 인자를 넣지 않는다)")
     for name, extra in ((NAME, ""),
                         (NAME_SUB,
                          f"\n            subtask_ends={SUBTASK_ENDS},"
                          f"\n            subtask_sentences={SUBTASK_SENTENCES},")):
-        block = block_for(name, lit, extra, bbox_line)
+        block = block_for(name, lit, extra, bbox_line, grasp_line)
         b0, b1 = f"    # <{name}>\n", f"    # </{name}>\n"
         block = b0 + block + b1
         i = s.find(b0)
@@ -76,7 +83,7 @@ def main():
     print("MISTAKE-CONFIG-DONE")
 
 
-def block_for(name, lit, extra, bbox_line=""):
+def block_for(name, lit, extra, bbox_line="", grasp_line=""):
     return f'''    # RSC_MISTAKE: 데모 1,000 + 실패 롤아웃 98 (mistake 라벨 포함) 병합 데이터셋.
     # baseline(pi05_robosyn_items_handover_lora_cos82k) 과 같은 82k cosine 이라
     # 같은 step 끼리 비교할 수 있다. PI05_MISTAKE=1 이어야 프롬프트에 필드가 들어간다.
@@ -102,10 +109,7 @@ def block_for(name, lit, extra, bbox_line=""):
             image_key_left="observation.images.cam_left_wrist",
             image_key_right="observation.images.cam_right_wrist",
             state_key="observation.state",
-{bbox_line}            # RSC_GRASPW: 집기 전후 구간. '그리퍼 닫기'(74~89)만 좁게 잡으면
-            #   그 앞의 접근 궤적이 안 바뀌어 효과가 적다. lower~lift 를 덮는다.
-            grasp_window=(50, 113),
-            mistake_starts={lit},{extra}
+{bbox_line}{grasp_line}            mistake_starts={lit},{extra}
         ),
         weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
         freeze_filter=pi0_config.Pi0Config(

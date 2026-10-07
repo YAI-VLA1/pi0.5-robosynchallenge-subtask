@@ -273,3 +273,29 @@ bbox_smoke.py      실제 배치 6/6 — 프롬프트 문자열, 구조 mask 22�
 grasp_smoke.py     3/3 — 집기 3.0 / 그 밖 1.0 / '박스 없음' <loc0000>×4
 verify_patches.py --bbox
 ```
+
+
+---
+
+## 2026-10-07 리뷰 반영 (5건)
+
+| | 문제 | 수정 |
+|---|---|---|
+| ① | 손목 패치 뒤에 집기 패치를 걸면 앵커가 깨짐. 집기 패치가 쓰는 `frame_valid` 는 MEM 이 만드는데 MEM 설치가 **뒤** | config 앵커를 bbox 블록 **밖** 세 줄로, Observation 앵커를 MEM 과 무관한 `token_loss_mask` 로 |
+| ② | `bbox=None`(대조군)에서 `UnboundLocalError: wmid` | `wmid`/`wbox_body` 를 분기 **밖**에서 초기화 |
+| ③ | pad 제외를 통째로 지워, 라벨 파일이 없으면 **빈 슬롯 8칸이 CE 대상** | pad 제외 **복원**. `<loc0000>`(id 256000)과 pad(id 0)은 id 가 달라 충돌하지 않는다 |
+| ④ | 생성기가 `grasp_window` 를 항상 넣는데 그 필드는 bbox 설치에만 있음 → `--mistake` 만 설치하면 TypeError | 필드가 있을 때만 인자 생성 |
+| ⑤ | 집기 가중이 `flow + CE` **전체**에 곱해짐 (문서와 불일치) | **flow 에만** 곱한다 — 늘리고 싶은 것은 그 순간의 action 정밀도지 언어 쪽 균형이 아니다 |
+
+추가로 setup 재실행이 깨지던 것도 고쳤다. 뒤 패치가 앞 패치의 줄을 고쳐 쓰면
+앞 패치가 사라진 앵커를 찾는다 — `DOWNSTREAM` 마커를 보고 건너뛴다.
+
+### 검증 (fresh checkout 에서 실제 실행)
+
+```
+--all                 끝까지 통과
+--all --recording     통과 · verify_patches --all  OK
+--all 재실행 2회       통과 (멱등)
+--subtask --mistake   통과 · grasp_window 0곳 · bbox_labels_dir 0곳
+tokenizer_slots_test  4/4 — None(대조군) 14 / bbox 18 / +wrist 22 / 박스없음 22
+```

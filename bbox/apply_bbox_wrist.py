@@ -61,6 +61,12 @@ TOK_P = [
   '                              bbox: "np.ndarray | None" = None,\n'
   '                              wbox: "np.ndarray | None" = None):'),
 
+ # wmid/wbox_body 는 **분기 밖**에서 먼저 비워 둬야 한다. bbox=None(대조군) 이면
+ # 아래 블록이 안 돌아 UnboundLocalError 가 난다.
+ ('        pad_id0 = self._tokenizer.pad_id() if self._tokenizer.pad_id() >= 0 else 0',
+  '        pad_id0 = self._tokenizer.pad_id() if self._tokenizer.pad_id() >= 0 else 0\n'
+  f'        wbox_body, wmid = [], []        # {MARK}: 분기 밖 초기화'),
+
  ('            mid = self._tokenizer.encode(self.BBOX_MID)',
   f'            # {MARK}: 손목 슬롯이 있으면 pen 과 "; Subtask:" 사이에 끼운다.\n'
   '            if wbox is not None:\n'
@@ -72,7 +78,7 @@ TOK_P = [
   '                    wbox_body = [pad_id0] * self.BBOX_SLOT      # 추론: 빈 슬롯\n'
   '                wmid = self._tokenizer.encode(self.WBOX_MID)\n'
   '            else:\n'
-  '                wbox_body, wmid = [], []\n'
+  '                wbox_body, wmid = [], []      # 손목 끔\n'
   '            mid = self._tokenizer.encode(self.BBOX_MID)'),
 
  ('        tokens = head + bbox_body + mid + body + tail\n'

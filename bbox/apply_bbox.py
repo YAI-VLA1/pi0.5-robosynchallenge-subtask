@@ -224,6 +224,16 @@ CFG_P = [
 ]
 
 
+# 뒤에 오는 패치가 이 패치가 만든 줄을 **고쳐 쓰는** 파일들.
+# 그 마커가 보이면 이 파일은 이미 (더 나아간 형태로) 적용된 것이라 건너뛴다.
+# 안 그러면 setup 재실행이 사라진 앵커를 찾다 죽는다.
+DOWNSTREAM = {
+    "src/openpi/models/tokenizer.py": ("RSC_WBOX",),
+    "src/openpi/transforms.py":       ("RSC_WBOX",),
+    "src/openpi/training/config.py":  ("RSC_WBOX", "RSC_GRASPW"),
+}
+
+
 def main():
     root = pathlib.Path(sys.argv[1] if len(sys.argv) > 1
                         else "/workspace/rsc_ws/RoboSynChallenge/policy/pi05")
@@ -231,6 +241,10 @@ def main():
     for rel, patches in ((TOK, TOK_P), (TR, TR_P), (POL, POL_P), (CFG, CFG_P)):
         p = root / rel
         s = p.read_text()
+        down = [m for m in DOWNSTREAM.get(rel, ()) if m in s]
+        if down:
+            print(f"  {rel:46} 건너뜀 (하류 패치 {','.join(down)} 가 이미 적용됨)")
+            continue
         if rel == TR:
             # 패치 목록에 넣으면 fresh / 이미 최종형 상태에서 앵커 0 개로 죽는다.
             s, why = bbox_migrate.migrate(s)

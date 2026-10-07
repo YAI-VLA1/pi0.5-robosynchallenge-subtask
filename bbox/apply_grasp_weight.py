@@ -60,12 +60,14 @@ POL_B = f'''        # {MARK}: dict 를 새로 만들므로 명시하지 않으�
 
 # ── ③ model.py — Observation 필드 ─────────────────────────────────────────
 MOD = "src/openpi/models/model.py"
-MOD_A = '''    frame_valid: dict[str, at.Bool[ArrayT, "*fb t"]] | None = None'''
-MOD_B = f'''    frame_valid: dict[str, at.Bool[ArrayT, "*fb t"]] | None = None
+# frame_valid 는 MEM 패치가 만든다 — 설치 순서가 뒤면 앵커가 없다.
+# MEM 과 무관한 줄(tokenized_prompt 선언)에 붙인다.
+MOD_A = '''    token_loss_mask: at.Bool[ArrayT, "*b l"] | None = None'''
+MOD_B = f'''    token_loss_mask: at.Bool[ArrayT, "*b l"] | None = None
     # {MARK}: 샘플별 손실 가중치. 집기 구간처럼 드문 결정적 순간을 키운다.
     loss_weight: at.Float[ArrayT, "*wb"] | None = None'''
-MOD_A2 = '''            frame_valid=data.get("frame_valid"),'''
-MOD_B2 = '''            frame_valid=data.get("frame_valid"),
+MOD_A2 = '''            token_loss_mask=data.get("token_loss_mask"),'''
+MOD_B2 = '''            token_loss_mask=data.get("token_loss_mask"),
             loss_weight=data.get("loss_weight"),'''
 
 # ── ④ pi0.py — flow 손실에 곱한다 ─────────────────────────────────────────
@@ -73,10 +75,12 @@ PI0 = "src/openpi/models/pi0.py"
 PI0_A = '''        ce, acc, acc_first = self._rsc_subtask_ce(observation, prefix_out)
         total = flow + _RSC_SUBTASK_W * ce[:, None]'''
 PI0_B = f'''        ce, acc, acc_first = self._rsc_subtask_ce(observation, prefix_out)
-        total = flow + _RSC_SUBTASK_W * ce[:, None]
-        # {MARK}: 집기 같은 드문 결정적 구간을 키운다. 없으면 1.0 이다.
+        # {MARK}: 집기 같은 드문 결정적 구간의 **action 회귀만** 키운다.
+        #   CE(subtask·bbox)까지 같이 키우면 언어 쪽 균형이 틀어진다 —
+        #   우리가 늘리고 싶은 것은 그 순간의 action 정밀도다.
         if observation.loss_weight is not None:
-            total = total * observation.loss_weight[:, None]'''
+            flow = flow * observation.loss_weight[:, None]
+        total = flow + _RSC_SUBTASK_W * ce[:, None]'''
 
 # ── ⑤ config.py — 배선 ────────────────────────────────────────────────────
 CFG = "src/openpi/training/config.py"
@@ -84,14 +88,15 @@ CFG_A = '''    bbox_labels_dir: str = ""'''
 CFG_B = f'''    bbox_labels_dir: str = ""
     # {MARK}: 집기 구간 [lo, hi) 과 가중치. weight 는 PI05_GRASP_W 로 덮어쓴다.
     grasp_window: tuple[int, int] = (0, 0)'''
-CFG_A2 = '''        if self.bbox_labels_dir:
-            repack_transform = repack_transform.push(
-                inputs=[_transforms.InjectBBox(labels_dir=self.bbox_labels_dir)],
-            )'''
-CFG_B2 = f'''        if self.bbox_labels_dir:
-            repack_transform = repack_transform.push(
-                inputs=[_transforms.InjectBBox(labels_dir=self.bbox_labels_dir)],
-            )
+# 앵커를 bbox 블록 **밖**의 한 줄로 잡는다. 손목 패치가 InjectBBox 호출에
+# 인자를 더하면 그 블록을 통째로 앵커로 쓴 쪽이 깨져 설치 순서에 종속된다.
+# 앵커는 bbox 블록 **직후**의 닫는 괄호 + 빈 줄 + 주석 첫 줄이다.
+# 손목 패치가 InjectBBox 호출 **안쪽**을 바꿔도 이 세 줄은 그대로다.
+# 주석 한 줄만 쓰면 다른 클래스에도 있어 2번 잡힌다.
+CFG_A2 = '''            )
+
+        # The data transforms are applied to the data coming from the dataset *and* during inference.'''
+CFG_B2 = f'''            )
 
         # {MARK}: 학습 전용. 추론에는 repack 이 돌지 않아 가중치가 안 붙는다(=1.0).
         _gw = float(_os.environ.get("PI05_GRASP_W", "1.0"))
@@ -99,7 +104,9 @@ CFG_B2 = f'''        if self.bbox_labels_dir:
             repack_transform = repack_transform.push(
                 inputs=[_transforms.InjectGraspWeight(
                     lo=self.grasp_window[0], hi=self.grasp_window[1], weight=_gw)],
-            )'''
+            )
+
+        # The data transforms are applied to the data coming from the dataset *and* during inference.'''
 
 
 def rep(root, rel, pairs, scope=None):
