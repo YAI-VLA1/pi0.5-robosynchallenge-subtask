@@ -23,6 +23,9 @@ URDF_CANDIDATES = [
     "/workspace/.cache/embodichain_data/assembled/"
     "CobotMagicWithGripperV100_CobotMagicWithGripperV100/"
     "CobotMagicWithGripperV100_CobotMagicWithGripperV100.urdf",
+    # 시뮬레이터를 안 깔고 자산만 받았을 때. CobotMagicArmV3.zip 은 extract/ 바로
+    # 아래로 풀린다 (bbox_run/fetch_urdf.sh). 조립본과 같은 V100 이다.
+    "/workspace/.cache/embodichain_data/extract/CobotMagicWithGripperV100.urdf",
     "/workspace/.cache/embodichain_data/extract/CobotMagicArm/"
     "CobotMagicWithGripperV70NoMaterial.urdf",
 ]
@@ -75,13 +78,27 @@ def robot_base():
     return np.asarray(r.get("init_pos", [0, 0, 0]), float)
 
 
-def qpos_to_urdf(q14):
-    """관측 state(14축) -> URDF nq(16).
+# 오른팔이 베이스에 붙는 자리. EmbodiChain 의 CobotMagicCfg.right_arm_xpos 는
+# 순수 평행이동 [0.233, -0.300, 0] 이다 (회전 없음).
+RIGHT_ARM_XPOS = np.array([0.233, -0.300, 0.0])
+
+
+def qpos_to_urdf(q14, nq=16):
+    """관측 state(14축) -> URDF 관절 벡터.
 
     관측은 [LEFT_JOINT1..7, RIGHT_JOINT1..7] 이고 7번째가 그리퍼다.
-    URDF 는 left_joint1..8, right_joint1..8 로 손가락이 둘이다 — 그리퍼 값을
-    두 손가락에 같이 넣는다. 카메라는 link6 에 붙어 있어 손가락 값과 무관하다.
+    URDF 의 손가락은 둘이라 그리퍼 값을 양쪽에 같이 넣는다. 카메라는 link6 에
+    붙어 있어 손가락 값과는 무관하다.
+
+    nq=16  조립본(left_* + right_*). 원래 쓰던 모델이다.
+    nq=8   단일 팔 모델. 시뮬레이터를 안 깔면 조립본이 없어서 이쪽을 쓴다 —
+           오른팔만 넣고, 베이스 오프셋은 호출자가 더한다.
     """
+    q14 = np.asarray(q14, float)
+    if nq == 8:
+        q = np.zeros(8, float)
+        q[0:6] = q14[7:13]; q[6] = q14[13]; q[7] = q14[13]
+        return q
     q = np.zeros(16, float)
     q[0:6] = q14[0:6]; q[6] = q14[6]; q[7] = q14[6]
     q[8:14] = q14[7:13]; q[14] = q14[13]; q[15] = q14[13]
@@ -91,8 +108,11 @@ def qpos_to_urdf(q14):
 class WristCam:
     def __init__(self):
         self.pin, self.model, self.data, _ = load_robot()
-        self.fid = self.model.getFrameId("right_link6")
-        self.base = robot_base()
+        # 조립본이면 right_link6, 단일 팔 모델이면 link6 다. 단일 팔은 자기 베이스
+        # 기준이라 오른팔 장착 위치를 더해야 조립본과 같은 좌표가 된다.
+        self.nq = self.model.nq
+        self.fid = self.model.getFrameId("right_link6" if self.nq == 16 else "link6")
+        self.base = robot_base() + (RIGHT_ARM_XPOS if self.nq == 8 else 0.0)
         g = json.load(open(CFG))
         c = [s for s in g["sensor"] if s["uid"] == "cam_right_wrist"][0]
         fx, fy, cx, cy = c["intrinsics"]
@@ -102,7 +122,7 @@ class WristCam:
         self.off_R = quat_to_R(e["quat"]) @ AXIS_FIX
 
     def cam_pose(self, q14):
-        q = qpos_to_urdf(np.asarray(q14, float))
+        q = qpos_to_urdf(q14, self.nq)
         self.pin.forwardKinematics(self.model, self.data, q)
         self.pin.updateFramePlacements(self.model, self.data)
         M = self.data.oMf[self.fid]

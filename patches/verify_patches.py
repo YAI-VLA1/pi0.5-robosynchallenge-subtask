@@ -133,8 +133,12 @@ def main():
         groups.append(("MEM", MEM))
         if (root / "policy/pi05/deploy_policy.py").exists():
             groups.append(("MEM 추론", MEM_INFER))
+    # ★ --all 에 녹화는 **안 들어간다**. apply_patches.sh 의 --all 이
+    #   subtask+mistake+mem+bbox 만 설치하기 때문이다 (녹화는 평가 전용이라
+    #   --recording 으로 따로 켠다). 여기서 --all 에 녹화를 요구하면
+    #   "설치는 --all 로 끝났는데 검증이 FAIL" 이 된다 — 실제로 당했다.
     if (root / "scripts/eval_policy.py").exists() and (
-            "--rollout" in sys.argv or "--all" in sys.argv):
+            "--rollout" in sys.argv or "--recording" in sys.argv):
         groups.append(("롤아웃 녹화", ROLLOUT))
     bad = run(root, groups)
     if "--bbox" in sys.argv or "--all" in sys.argv:
