@@ -299,3 +299,40 @@ verify_patches.py --bbox
 --subtask --mistake   통과 · grasp_window 0곳 · bbox_labels_dir 0곳
 tokenizer_slots_test  4/4 — None(대조군) 14 / bbox 18 / +wrist 22 / 박스없음 22
 ```
+
+
+---
+
+## 2026-10-07 재리뷰 (P1) — 기존 설치 업데이트 경로
+
+패치는 파일에 마커가 있으면 "이미 적용됨" 으로 건너뛴다. 그 판정은 *무엇이*
+적용됐는지는 안 본다 — **옛 커밋이 심어 둔 코드가 있는 머신에 새 패치를 돌리면
+전부 건너뛰고 옛 코드가 남는다.** 깨끗한 설치만 검증해서는 안 잡힌다.
+
+고쳐야 할 것이 '없던 코드를 넣는' 것이 아니라 '있는 코드를 바꾸는' 것이라
+rep() 의 앵커 방식으로는 못 쓴다. `bbox/migrate_v2.py` 를 **마커 검사보다 먼저**
+돌린다 (apply_bbox_wrist / apply_bbox_nobox / apply_grasp_weight 의 main 첫 줄).
+
+| | 올리는 것 | 안 고치면 |
+|---|---|---|
+| M1 | tokenizer.py — 손목 변수 분기 밖 초기화 | bbox OFF(대조군) 크래시 유지 |
+| M2 | pi0.py — bbox 슬롯 pad 제외 복원 | 누락 라벨의 빈 슬롯을 계속 감독 |
+| M3 | pi0.py — 집기 가중을 flow 에만 | flow+CE 전체에 가중 유지 |
+
+model.py 필드 위치와 config.py 집기 블록은 **설치 결과가 같아서** 마이그레이션이
+필요 없다 (앵커만 바꾼 것이다). prepare_mistake_config.py 는 생성기라 설치본이 없다.
+
+### 검증
+
+```
+e7dca2a 로 설치 → 최신 패치 적용 → 깨끗한 설치와 diff
+  tokenizer.py pi0.py model.py config.py transforms.py libero_policy.py
+  train.py gemma.py                                    전부 same (바이트 동일)
+migrate_v2_test.py   OK 5/5  (M1 / M2 / M3 / 셋 동시 / 멱등)
+tokenizer_slots_test OK 4/4
+verify_patches --all OK
+```
+
+`e7dca2a` 의 `--all` 은 사실 **끝까지 돌지도 않았다** — 집기 패치가 MEM 이 만드는
+`frame_valid` 를 앵커로 써서 MEM 보다 먼저 돌다 죽는다. 그래서 실제로 남는 상태는
+"집기 패치가 반만 적용된 트리" 이고, 그것도 위 경로로 복구된다.

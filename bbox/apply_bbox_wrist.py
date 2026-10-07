@@ -20,6 +20,8 @@
 켜기: PI05_BBOX_WRIST=1  (PI05_BBOX=1 이 전제다. 학습·추론 양쪽에 같은 값)
 """
 import pathlib, sys
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import migrate_v2
 
 MARK = "RSC_WBOX"
 
@@ -223,6 +225,9 @@ CFG_P = [
 def main():
     root = pathlib.Path(sys.argv[1] if len(sys.argv) > 1
                         else "/workspace/rsc_ws/RoboSynChallenge/policy/pi05")
+    # ★ 마커 검사보다 **먼저**. 옛 커밋이 심어 둔 코드는 마커가 이미 있어
+    #   아래가 전부 "이미 적용됨" 으로 끝난다 — 그 전에 옛 코드를 새 코드로 올린다.
+    migrate_v2.run(root, ["src/openpi/models/tokenizer.py"])
     rep(root, TOK, TOK_P)
     rep(root, TR,  TR_P)
     rep(root, POL, POL_P, scope="class EmbodiChainInputs")

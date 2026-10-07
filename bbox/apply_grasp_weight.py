@@ -17,6 +17,8 @@
 켜기: PI05_GRASP_W=3.0  (1.0 이면 꺼진 것과 같다)
 """
 import pathlib, sys
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import migrate_v2
 
 MARK = "RSC_GRASPW"
 
@@ -138,6 +140,9 @@ def rep(root, rel, pairs, scope=None):
 def main():
     root = pathlib.Path(sys.argv[1] if len(sys.argv) > 1
                         else "/workspace/rsc_ws/RoboSynChallenge/policy/pi05")
+    # ★ 마커 검사보다 **먼저**. 옛 커밋이 심어 둔 코드는 마커가 이미 있어
+    #   아래가 전부 "이미 적용됨" 으로 끝난다 — 그 전에 옛 코드를 새 코드로 올린다.
+    migrate_v2.run(root, ["src/openpi/models/pi0.py"])
     rep(root, TR,  [(TR_A, TR_B)])
     rep(root, POL, [(POL_A, POL_B)], scope="class EmbodiChainInputs")
     rep(root, MOD, [(MOD_A, MOD_B), (MOD_A2, MOD_B2)])
